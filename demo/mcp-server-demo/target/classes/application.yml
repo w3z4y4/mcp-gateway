@@ -1,0 +1,10 @@
+spring:
+  main:
+    banner-mode: off
+  ai:
+    mcp:
+      server:
+        name: demo-mcp-server
+        version: 0.0.1
+server:
+  port: 8089
