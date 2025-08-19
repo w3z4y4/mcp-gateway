@@ -1,15 +1,15 @@
 package org.jdt.mcp.gateway.demo.ctl;
 
-import lombok.Data;
-import org.jdt.mcp.gateway.demo.entity.Employee;
-import org.jdt.mcp.gateway.demo.entity.Worker;
+
+import entity.Employee;
+import entity.Worker;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
 
 @RestController
-@RequestMapping("demo")
+@RequestMapping("/demo")
 public class DemoController {
     @RequestMapping("/flux")
     public Flux<String> fluxDemo(@RequestBody Employee employee){
@@ -23,5 +23,9 @@ public class DemoController {
     @RequestMapping("/getWorker")
     public Worker getWorker(@RequestBody Employee employee){
         return new Worker(employee);
+    }
+    @RequestMapping("/hello")
+    public String hi(){
+        return "hello";
     }
 }

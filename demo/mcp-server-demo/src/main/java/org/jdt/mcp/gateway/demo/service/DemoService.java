@@ -1,7 +1,7 @@
 package org.jdt.mcp.gateway.demo.service;
 
 
-import org.jdt.mcp.gateway.demo.entity.Employee;
+import entity.Employee;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Service;

@@ -1,4 +1,4 @@
-package org.jdt.mcp.gateway.demo.entity;
+package entity;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;

@@ -15,6 +15,7 @@
         <module>http-demo</module>
         <module>mcp-server-demo</module>
         <module>mcp-client-demo</module>
+        <module>common-demo</module>
     </modules>
 
     <properties>

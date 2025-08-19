@@ -1,4 +1,4 @@
-package org.jdt.mcp.gateway.demo.entity;
+package entity;
 
 import lombok.Data;
 

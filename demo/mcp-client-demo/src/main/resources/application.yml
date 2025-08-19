@@ -32,4 +32,4 @@ logging:
 
 # spring.ai.mcp.client.toolcallback.enabled: false
 server:
-  port: 8081
+  port: 8087
