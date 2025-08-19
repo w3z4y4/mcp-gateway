@@ -1,0 +1,35 @@
+spring:
+  application:
+    name: mcp
+  main:
+    web-application-type: reactive
+
+# Disable the chat client auto-configuration because we are using multiple chat models
+spring.ai.chat.client.enabled: false
+
+spring.ai.openai:
+  base-url: https://dashscope.aliyuncs.com/compatible-mode
+  api-key: sk-8d6a689166c54a7c98af7282ef1fd665
+  chat:
+    options:
+      model: qwen-plus
+      stream-options: true
+
+spring.ai.mcp.client:
+  toolcallback.enable: true
+  sse:
+    connections:
+      server1:
+        url: http://localhost:8089
+  type: async
+
+
+logging:
+  level:
+    io.modelcontextprotocol.client: debug
+    io.modelcontextprotocol.spec: debug
+
+
+# spring.ai.mcp.client.toolcallback.enabled: false
+server:
+  port: 8081

@@ -5,17 +5,11 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>org.jdt.mcp</groupId>
-        <artifactId>gateway</artifactId>
+        <artifactId>demo</artifactId>
         <version>0.0.1-SNAPSHOT</version>
     </parent>
 
-    <artifactId>demo</artifactId>
-    <packaging>pom</packaging>
-    <modules>
-        <module>http-demo</module>
-        <module>mcp-server-demo</module>
-        <module>mcp-client-demo</module>
-    </modules>
+    <artifactId>mcp-client-demo</artifactId>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
@@ -25,9 +19,12 @@
 
     <dependencies>
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webflux</artifactId>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-openai</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-mcp-client-webflux</artifactId>
         </dependency>
     </dependencies>
-
 </project>

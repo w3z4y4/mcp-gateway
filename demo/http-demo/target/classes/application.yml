@@ -1,8 +1,0 @@
-server:
-  port: 8088
-spring:
-  application:
-    name: mcp-gateway-demo
-logging:
-  level:
-    root: INFO
