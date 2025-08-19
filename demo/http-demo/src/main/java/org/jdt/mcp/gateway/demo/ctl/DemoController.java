@@ -1,6 +1,8 @@
 package org.jdt.mcp.gateway.demo.ctl;
 
 import lombok.Data;
+import org.jdt.mcp.gateway.demo.entity.Employee;
+import org.jdt.mcp.gateway.demo.entity.Worker;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -18,10 +20,8 @@ public class DemoController {
         return "hello "+employee.getName();
     }
 
-    @Data
-    public static class Employee{
-        String name;
-        String phoneNum;
-        String department;
+    @RequestMapping("/getWorker")
+    public Worker getWorker(@RequestBody Employee employee){
+        return new Worker(employee);
     }
 }

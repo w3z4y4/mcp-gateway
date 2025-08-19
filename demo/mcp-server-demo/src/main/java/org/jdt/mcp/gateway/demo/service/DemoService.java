@@ -1,5 +1,6 @@
 package org.jdt.mcp.gateway.demo.service;
 
+import org.jdt.mcp.gateway.demo.entity.Employee;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Service;
@@ -9,5 +10,10 @@ public class DemoService {
     @Tool(description = "根据姓名查询工作单位")
     public String getJobs(@ToolParam(description = "姓名") String name){
         return name+"在工商银行软件开发中心工作";
+    }
+
+    @Tool(description = "根据姓名查询工作单位")
+    public String getWorks(@ToolParam Employee employee){
+        return employee.getName()+"在工商银行软件开发中心工作";
     }
 }
