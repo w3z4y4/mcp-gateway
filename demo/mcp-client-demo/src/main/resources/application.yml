@@ -20,7 +20,7 @@ spring.ai.mcp.client:
   sse:
     connections:
       server1:
-        url: http://localhost:8089
+        url: http://localhost:8089?key=wangzy
   type: async
 
 
