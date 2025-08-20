@@ -1,13 +1,11 @@
 package org.jdt.mcp.gateway.atuh.service.impl;
 
 import lombok.extern.slf4j.Slf4j;
-import org.jdt.mcp.gateway.atuh.AuthConstants;
 import org.jdt.mcp.gateway.atuh.config.AuthConfiguration;
 import org.jdt.mcp.gateway.atuh.service.AuthService;
 import org.springframework.stereotype.Service;
 import org.springframework.util.AntPathMatcher;
 import reactor.core.publisher.Mono;
-import reactor.util.context.Context;
 
 @Slf4j
 @Service
