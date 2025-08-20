@@ -44,14 +44,26 @@
     - 输入：用户选中服务列表。
     - 输出：YAML/JSON文件下载。
         - 示例YAML格式：
-          ```
-          services:
-            - id: service1
-              endpoint: mcp://host:port
-              auth: { key: "generated_key" }
-            - id: service2
-              ...
-          ```
+```yml
+spring.ai.mcp.client:
+    toolcallback.enable: true
+    sse:
+        connections:
+            serviceName:
+                url: http://localhost:8089?key=admin-key-jdt
+                type: async
+ ```
+```json
+{
+  "serviceName": {
+    "autoApprove": [],
+    "disabled": false,
+    "timeout": 60,
+    "type": "sse",
+    "url": "http://localhost:8089?key=admin-key-jdt"
+  }
+}
+```
         - 逻辑：查询数据库服务元数据，结合用户ID生成密钥（详见三），序列化为YAML/JSON。
 
 #### 2.2 工作流程
@@ -108,11 +120,3 @@
     - 若任一超出，返回429 Too Many Requests。
 3. 通过后，递增计数器。
 4. 请求完成后，更新监控指标。
-
-#### 4.3 限流算法比较（使用表格呈现）
-
-| 维度       | 算法类型     | 优点                     | 缺点                     | 配置示例 |
-|------------|--------------|--------------------------|--------------------------|----------|
-| 全局      | 滑动窗口    | 平滑处理突发流量        | 内存消耗稍高            | max_qps=1000, window=1s |
-| 用户      | 令牌桶      | 支持突发，易配置        | 需要定时填充令牌        | max_qps=100, burst=200 |
-| 混合      | 漏桶        | 严格控制速率            | 不支持突发              | max_qps=50, leak_rate=1/s |
