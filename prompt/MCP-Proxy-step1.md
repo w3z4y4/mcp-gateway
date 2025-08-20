@@ -15,12 +15,12 @@
 
 #### 1.1 模块组件
 - **协议转换器**：处理HTTP/HTTPS请求到MCP协议的转换。
-  - 输入：HTTP请求（方法、路径、头、Body）。
-  - 输出：MCP消息（序列化后转发到后端服务）。
-  - 实现：使用自定义MCP库（假设基于Protobuf或Thrift序列化）。转换逻辑包括：
-    - 映射HTTP方法到MCP操作码（e.g., GET -> Query）。
-    - 头信息保留（如User-Agent），并添加MCP特定元数据（e.g., Trace ID）。
-    - Body转换：JSON/XML 到 MCP二进制。
+    - 输入：HTTP请求（方法、路径、头、Body）。
+    - 输出：MCP消息（序列化后转发到后端服务）。
+    - 实现：使用自定义MCP库（假设基于Protobuf或Thrift序列化）。转换逻辑包括：
+        - 映射HTTP方法到MCP操作码（e.g., GET -> Query）。
+        - 头信息保留（如User-Agent），并添加MCP特定元数据（e.g., Trace ID）。
+        - Body转换：JSON/XML 到 MCP二进制。
 
 #### 1.2 工作流程
 1. 接收HTTP/HTTPS请求。
@@ -39,20 +39,20 @@
 
 #### 2.1 模块组件
 - **服务市场接口**：
-  - 服务详情展示：实时拉取监控数据。
+    - 服务详情展示：实时拉取监控数据。
 - **配置生成器**：支持多选服务生成MCP Client配置。
-  - 输入：用户选中服务列表。
-  - 输出：YAML/JSON文件下载。
-    - 示例YAML格式：
-      ```
-      services:
-        - id: service1
-          endpoint: mcp://host:port
-          auth: { key: "generated_key" }
-        - id: service2
-          ...
-      ```
-    - 逻辑：查询数据库服务元数据，结合用户ID生成密钥（详见三），序列化为YAML/JSON。
+    - 输入：用户选中服务列表。
+    - 输出：YAML/JSON文件下载。
+        - 示例YAML格式：
+          ```
+          services:
+            - id: service1
+              endpoint: mcp://host:port
+              auth: { key: "generated_key" }
+            - id: service2
+              ...
+          ```
+        - 逻辑：查询数据库服务元数据，结合用户ID生成密钥（详见三），序列化为YAML/JSON。
 
 #### 2.2 工作流程
 1. 前端查询服务市场：后端查询服务列表。
@@ -66,20 +66,20 @@
 
 #### 3.1 模块组件
 - **密钥生成器**：
-  - 格式：基于MCP服务ID + 用户ID生成（e.g., HMAC-SHA256(service_id + user_id + salt)）。
-  - 生命周期：默认永久有效，支持手动失效（存储在数据库，添加expire字段）。
-  - 生成逻辑：门户调用时自动生成，存储到MySQL（表：auth_keys，字段：key, user_id, service_id, created_at, expires_at）。
+    - 格式：基于MCP服务ID + 用户ID生成（e.g., HMAC-SHA256(service_id + user_id + salt)）。
+    - 生命周期：默认永久有效，支持手动失效（存储在数据库，添加expire字段）。
+    - 生成逻辑：门户调用时自动生成，存储到MySQL（表：auth_keys，字段：key, user_id, service_id, created_at, expires_at）。
 - **请求验证器**：
-  - 支持两种方式：
-    - Query参数：e.g., ?auth_key=xxx。
-    - Authorization Header：e.g., Authorization: Bearer xxx。
-  - 验证流程：
-    1. 提取key。
-    2. 查询数据库验证key有效性（匹配user_id, service_id，未过期）。
-    3. 若无效，返回401 Unauthorized。
+    - 支持两种方式：
+        - Query参数：e.g., ?auth_key=xxx。
+        - Authorization Header：e.g., Authorization: Bearer xxx。
+    - 验证流程：
+        1. 提取key。
+        2. 查询数据库验证key有效性（匹配user_id, service_id，未过期）。
+        3. 若无效，返回401 Unauthorized。
 - **调用记录器**：
-  - 每次调用记录<user_id, service_id, timestamp, status_code>。
-  - 异步写入：写入本地的异步阻塞队列即可，消费无需考虑。
+    - 每次调用记录<user_id, service_id, timestamp, status_code>。
+    - 异步写入：写入本地的异步阻塞队列即可，消费无需考虑。
 
 #### 3.2 工作流程
 1. 代理层接收请求 -> 提取鉴权信息。
@@ -96,16 +96,16 @@
 
 #### 4.1 模块组件
 - **限流规则引擎**：使用Lua脚本在Redis执行原子操作。
-  - 全局维度：单服务最大QPS（e.g., Redis key: "global:service_id:qps"，使用滑动窗口算法）。
-  - 用户维度：单用户最大QPS（key: "user:user_id:qps"）。
-  - 混合规则：用户+服务组合（key: "user_service:user_id:service_id:qps"）。
+    - 全局维度：单服务最大QPS（e.g., Redis key: "global:service_id:qps"，使用滑动窗口算法）。
+    - 用户维度：单用户最大QPS（key: "user:user_id:qps"）。
+    - 混合规则：用户+服务组合（key: "user_service:user_id:service_id:qps"）。
 - **配置管理**：从数据库加载规则，支持热更新（e.g., 全局QPS=1000，用户QPS=100，组合=50）。
 - **熔断/降级**：扩展支持sentinel熔断，当QPS超标时返回降级响应。
 
 #### 4.2 工作流程
 1. 代理层接收请求 -> 提取user_id, service_id。
 2. 并行检查三维度限流：
-   - 若任一超出，返回429 Too Many Requests。
+    - 若任一超出，返回429 Too Many Requests。
 3. 通过后，递增计数器。
 4. 请求完成后，更新监控指标。
 
