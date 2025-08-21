@@ -6,5 +6,38 @@ spring:
       server:
         name: demo-mcp-server
         version: 0.0.1
+  datasource:
+    url: jdbc:mysql://localhost:3306/mcp_gateway?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
+    username: root
+    password: McpDB123
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 300000
+      connection-timeout: 20000
+
+    jackson:
+      time-zone: GMT+8
+      date-format: yyyy-MM-dd HH:mm:ss
+      serialization:
+        write-dates-as-timestamps: false
+
+# MyBatis配置
+mybatis:
+  type-aliases-package: org.jdt.mcp.gateway.core.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+# 日志配置
+logging:
+  level:
+    org.jdt.mcp.gateway: DEBUG
+    org.apache.ibatis: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{50} - %msg%n"
+  file:
+    name: logs/management.log
 server:
   port: 8089

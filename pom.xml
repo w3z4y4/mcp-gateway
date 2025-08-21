@@ -22,6 +22,7 @@
         <module>traffic</module>
         <module>assembly</module>
         <module>demo</module>
+        <module>persist</module>
     </modules>
     <properties>
         <java.version>17</java.version>

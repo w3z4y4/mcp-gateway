@@ -1,7 +1,7 @@
 package org.jdt.mcp.gateway.atuh.config;
 
 import lombok.Data;
-import org.jdt.mcp.gateway.atuh.AuthEnum;
+import org.jdt.mcp.gateway.core.entity.AuthType;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
@@ -38,5 +38,6 @@ public class AuthConfiguration {
      */
     private Set<String> allowedIps = Set.of("127.0.0.1", "::1");
 
-    private AuthEnum authType = AuthEnum.db;
+    private AuthType authType= AuthType.db;
+
 }

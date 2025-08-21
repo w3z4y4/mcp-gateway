@@ -19,6 +19,7 @@ public class DemoService {
         this.authContextHelper = authContextHelper;
     }
 
+    // todo 能否提供流式返回
     @Tool(description = "根据姓名和手机号查询工作单位")
     public String getWorks(@ToolParam(description = "输入姓名和手机号") Employee employee){
         AuthContextHelper.AuthInfo authInfo = authContextHelper.getAuthInfoSync();

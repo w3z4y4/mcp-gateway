@@ -5,7 +5,7 @@ import org.jdt.mcp.gateway.core.entity.MCPServiceEntity;
 import org.jdt.mcp.gateway.core.entity.ServiceStatus;
 import org.jdt.mcp.gateway.management.dto.MCPServiceCreateRequest;
 import org.jdt.mcp.gateway.management.dto.MCPServiceUpdateRequest;
-import org.jdt.mcp.gateway.management.mapper.MCPServiceMapper;
+import org.jdt.mcp.gateway.mapper.MCPServiceMapper;
 import org.jdt.mcp.gateway.management.service.MCPServiceManagementService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;

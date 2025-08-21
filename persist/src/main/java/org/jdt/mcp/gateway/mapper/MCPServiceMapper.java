@@ -1,4 +1,4 @@
-package org.jdt.mcp.gateway.management.mapper;
+package org.jdt.mcp.gateway.mapper;
 
 import org.apache.ibatis.annotations.*;
 import org.jdt.mcp.gateway.core.entity.MCPServiceEntity;

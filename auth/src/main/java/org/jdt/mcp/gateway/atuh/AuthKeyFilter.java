@@ -15,6 +15,10 @@ import reactor.core.publisher.Mono;
 
 import static org.jdt.mcp.gateway.atuh.tool.AuthReqTool.*;
 
+/**
+ * authKey过滤器
+ * 只会过滤基于webflux的请求
+ */
 @Component
 @Slf4j
 @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -59,8 +63,6 @@ public class AuthKeyFilter implements WebFilter {
                     return handleUnauthorized(exchange,"鉴权服务失败");
                 });
     }
-
-
 
     private Mono<Void> handleUnauthorized(ServerWebExchange exchange, String message) {
         ServerHttpResponse response = exchange.getResponse();
