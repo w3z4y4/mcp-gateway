@@ -20,7 +20,6 @@
         <module>management</module>
         <module>auth</module>
         <module>traffic</module>
-        <module>assembly</module>
         <module>demo</module>
         <module>persist</module>
     </modules>

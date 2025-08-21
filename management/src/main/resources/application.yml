@@ -50,18 +50,3 @@ management:
   endpoint:
     health:
       show-details: always
-
-# 自定义配置
-jdt:
-  mcp:
-    management:
-      # 网关基础URL（用于生成配置）
-      gateway-base-url: http://localhost:9080
-      # 配置生成默认参数
-      config:
-        default-timeout: 60
-        default-tool-callback-enable: true
-      # 健康检查配置
-      health-check:
-        timeout: 5000
-        enabled: true

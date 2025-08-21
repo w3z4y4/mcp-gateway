@@ -1,4 +1,4 @@
-package org.jdt.mcp.gateway.assembly;
+package org.jdt.mcp.gateway.proxy;
 
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
@@ -10,8 +10,8 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 @ComponentScan("org.jdt.mcp.gateway")
 @MapperScan("org.jdt.mcp.gateway.mapper")
 @EnableTransactionManagement
-public class GatewayAssemblyApp {
+public class ProxyApp {
     public static void main(String[] args) {
-        SpringApplication.run(GatewayAssemblyApp.class);
+        SpringApplication.run(ProxyApp.class, args);
     }
 }

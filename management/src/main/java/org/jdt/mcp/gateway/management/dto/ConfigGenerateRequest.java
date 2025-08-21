@@ -15,7 +15,7 @@ public class ConfigGenerateRequest {
     private List<String> serviceIds;
 
     // mcp-proxy基础URL
-    private String baseUrl = "http://localhost:8089";
+    private String baseUrl = "http://localhost:9080";
 
     private Boolean toolCallbackEnable = true; // 是否启用工具回调
 
