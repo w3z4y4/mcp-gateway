@@ -27,13 +27,14 @@ public interface AuthCallLogMapper {
      * 记录调用（简化版本，用于异步记录）
      */
     @Insert("""
-        INSERT INTO api_call_logs (user_id, service_id, request_path, request_method, 
+        INSERT INTO api_call_logs (user_id, service_id, auth_key_id, request_path, request_method, 
                                   client_ip, status_code, created_at)
-        VALUES (#{userId}, #{serviceId}, #{requestPath}, #{requestMethod}, 
+        VALUES (#{userId}, #{serviceId}, #{auth_key_id}, #{requestPath}, #{requestMethod}, 
                 #{clientIp}, #{statusCode}, NOW())
         """)
     void insertSimpleLog(@Param("userId") String userId,
                          @Param("serviceId") String serviceId,
+                         @Param("auth_key_id") Long authKeyId,
                          @Param("requestPath") String requestPath,
                          @Param("requestMethod") String requestMethod,
                          @Param("clientIp") String clientIp,

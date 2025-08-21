@@ -20,7 +20,7 @@ spring.ai.mcp.client:
   sse:
     connections:
       server1:
-        url: http://localhost:8089?key=0UqC1yxKDAVb1PAQ75ArLVN0PbvTTKvHdHUz5XCj13Q
+        url: http://localhost:8089?key=zIHCuqI29VDQKezCjbFdhRgi-8tz3QjyLPjrDYm6y5g
   type: async
 
 

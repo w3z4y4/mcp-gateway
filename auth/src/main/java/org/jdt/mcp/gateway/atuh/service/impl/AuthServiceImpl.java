@@ -27,10 +27,9 @@ public class AuthServiceImpl implements AuthService {
 
     private final Sinks.Many<AuthCallRecord> logSink;
 
-
-    public AuthServiceImpl(AuthConfiguration authConfig
-            ,AuthKeyMapper authKeyMapper
-            ,AuthCallLogMapper authCallLogMapper) {
+    public AuthServiceImpl(AuthConfiguration authConfig,
+                           AuthKeyMapper authKeyMapper,
+                           AuthCallLogMapper authCallLogMapper) {
         this.authConfig = authConfig;
         this.pathMatcher = new AntPathMatcher();
         this.authKeyMapper = authKeyMapper;
@@ -66,8 +65,12 @@ public class AuthServiceImpl implements AuthService {
             return Mono.just(false);
         }
 
-        return validateWithStaticKeys(authKey)
-                .switchIfEmpty(Mono.just(false));
+        // 根据配置选择验证方式
+        if (authConfig.getAuthType() == AuthType.staticKey) {
+            return validateWithStaticKeys(authKey);
+        } else {
+            return validateWithDatabaseService(authKey);
+        }
     }
 
     @Override
@@ -75,7 +78,7 @@ public class AuthServiceImpl implements AuthService {
         return Mono.fromSupplier(() -> {
             boolean isValid = authConfig.getValidKeys().contains(authKey);
             log.info("Static key validation for key ending with {}: {}",
-                    authKey, isValid);
+                    maskKey(authKey), isValid);
             return isValid;
         });
     }
@@ -126,36 +129,61 @@ public class AuthServiceImpl implements AuthService {
         }
 
         // 3. 根据配置进行key验证
-        // 根据配置选择验证方式
-        if (authConfig.getAuthType() == AuthType.staticKey) {
-            return validateWithStaticKeys(authKey);
-        } else {
-            return validateWithDatabaseService(authKey);
-        }
+        return validateAuthKey(authKey)
+                .doOnNext(isValid -> {
+                    // 使用logSink异步发送日志记录事件
+                    if (authKey != null) { // 无论验证成功失败都记录
+                        AuthCallRecord record = new AuthCallRecord(path, ip, authKey, isValid);
+                        Sinks.EmitResult emitResult = logSink.tryEmitNext(record);
+
+                        // 如果发送失败，记录错误但不影响主流程
+                        if (emitResult.isFailure()) {
+                            log.warn("Failed to emit auth call record: {}, fallback to sync logging", emitResult);
+                            // 降级到同步记录（可选）
+                            CompletableFuture.runAsync(() -> {
+                                try {
+                                    recordAuthCallSync(path, ip, authKey, isValid);
+                                } catch (Exception e) {
+                                    log.error("Fallback sync logging also failed", e);
+                                }
+                            });
+                        } else {
+                            log.debug("Auth call record emitted successfully for key: {}", maskKey(authKey));
+                        }
+                    }
+                });
     }
 
     /**
-     * 脱敏显示key
+     * 设置异步日志处理器
      */
-    private String maskKey(String authKey) {
-        if (authKey == null || authKey.length() < 4) {
-            return "***";
-        }
-        return "***" + authKey.substring(authKey.length() - 4);
-    }
-
     private void setupAsyncLogProcessor() {
         logSink.asFlux()
                 .onBackpressureDrop(dropped -> log.warn("Dropped log record due to backpressure: {}", dropped))
                 .subscribeOn(Schedulers.boundedElastic())
-                .subscribe(record -> {
-                    try {
-                        recordAuthCallSync(record.path(), record.ip(), record.authKey(), record.success());
-                    } catch (Exception e) {
-                        log.error("Error processing async log record", e);
-                    }
-                });
+                .subscribe(
+                        record -> {
+                            try {
+                                recordAuthCallSync(record.path(), record.ip(), record.authKey(), record.success());
+                            } catch (Exception e) {
+                                log.error("Error processing async log record: {}", record, e);
+                            }
+                        },
+                        error -> {
+                            log.error("Error in async log processor, restarting...", error);
+                            // 重启日志处理器
+                            setupAsyncLogProcessor();
+                        },
+                        () -> {
+                            log.warn("Async log processor completed, restarting...");
+                            // 重启日志处理器
+                            setupAsyncLogProcessor();
+                        }
+                );
+
+        log.info("Async log processor started successfully");
     }
+
     /**
      * 记录认证调用日志（同步方式）
      */
@@ -168,16 +196,29 @@ public class AuthServiceImpl implements AuthService {
                 authCallLogMapper.insertSimpleLog(
                         authKeyEntity.getUserId(),
                         authKeyEntity.getMCPServiceId(),
+                        authKeyEntity.getId(),
                         path,
                         "GET", // 这里可以从请求中获取实际方法
                         ip,
                         success ? 200 : 403
                 );
-                log.debug("Recorded auth call for user: {}, service: {}",
-                        authKeyEntity.getUserId(), authKeyEntity.getMCPServiceId());
+                log.debug("Recorded auth call for user: {}, service: {}, success: {}",
+                        authKeyEntity.getUserId(), authKeyEntity.getMCPServiceId(), success);
+            } else {
+                log.warn("Auth key entity not found for key: {}", maskKey(authKey));
             }
         } catch (Exception e) {
-            log.error("Error recording auth call", e);
+            log.error("Error recording auth call for key: {}", maskKey(authKey), e);
         }
+    }
+
+    /**
+     * 脱敏显示key
+     */
+    private String maskKey(String authKey) {
+        if (authKey == null || authKey.length() < 4) {
+            return "***";
+        }
+        return "***" + authKey.substring(authKey.length() - 4);
     }
 }

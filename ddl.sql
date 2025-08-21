@@ -2,8 +2,9 @@
 CREATE DATABASE IF NOT EXISTS mcp_gateway DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 USE mcp_gateway;
-
+-- TODO 禁止使用外键
 -- MCP服务表
+DROP TABLE IF EXISTS mcp_services;
 CREATE TABLE IF NOT EXISTS mcp_services (
     id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
     service_id VARCHAR(100) NOT NULL UNIQUE COMMENT '服务唯一标识',
@@ -23,6 +24,7 @@ CREATE TABLE IF NOT EXISTS mcp_services (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='MCP服务表';
 
 -- 认证密钥表
+DROP TABLE IF EXISTS auth_keys;
 CREATE TABLE IF NOT EXISTS auth_keys (
     id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
     key_hash VARCHAR(500) NOT NULL UNIQUE COMMENT '密钥哈希值',
@@ -43,11 +45,8 @@ CREATE TABLE IF NOT EXISTS auth_keys (
     FOREIGN KEY (mcp_service_id) REFERENCES mcp_services(service_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='认证密钥表';
 
--- 插入测试数据
-INSERT INTO mcp_services (service_id, name, description, endpoint, status, max_qps, health_check_url, documentation) VALUES
-('hr-service', '人力服务', '提供查询工作单位的服务', 'http://localhost:8089', 'ACTIVE', 10, 'http://localhost:8089/', '支持按照人名手机号查询工作单位的服务');
-
 -- 创建调用日志表（可选，用于记录API调用）
+DROP TABLE IF EXISTS api_call_logs;
 CREATE TABLE IF NOT EXISTS api_call_logs (
     id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
     user_id VARCHAR(100) NOT NULL COMMENT '用户ID',
@@ -73,6 +72,7 @@ CREATE TABLE IF NOT EXISTS api_call_logs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='API调用日志表';
 
 -- 创建服务统计表（可选，用于统计分析）
+DROP TABLE IF EXISTS service_statistics;
 CREATE TABLE IF NOT EXISTS service_statistics (
     id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
     service_id VARCHAR(100) NOT NULL COMMENT '服务ID',
@@ -92,3 +92,7 @@ CREATE TABLE IF NOT EXISTS service_statistics (
 
     FOREIGN KEY (service_id) REFERENCES mcp_services(service_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='服务统计表';
+
+-- 插入测试数据
+INSERT INTO mcp_services (service_id, name, description, endpoint, status, max_qps, health_check_url, documentation) VALUES
+    ('hr-service', '人力服务', '提供查询工作单位的服务', 'http://localhost:8089', 'ACTIVE', 10, 'http://localhost:8089/', '支持按照人名手机号查询工作单位的服务');
