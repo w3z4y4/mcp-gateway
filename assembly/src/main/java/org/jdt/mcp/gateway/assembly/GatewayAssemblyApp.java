@@ -8,8 +8,8 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 @SpringBootApplication(scanBasePackages = "org.jdt.mcp.gateway")
 @MapperScan("org.jdt.mcp.gateway.management.mapper")
 @EnableTransactionManagement
-public class Application {
+public class GatewayAssemblyApp {
     public static void main(String[] args) {
-        SpringApplication.run(Application.class);
+        SpringApplication.run(GatewayAssemblyApp.class);
     }
 }

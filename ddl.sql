@@ -45,10 +45,7 @@ CREATE TABLE IF NOT EXISTS auth_keys (
 
 -- 插入测试数据
 INSERT INTO mcp_services (service_id, name, description, endpoint, status, max_qps, health_check_url, documentation) VALUES
-('weather-service', '天气服务', '提供全球天气查询服务', 'http://localhost:8081/weather', 'ACTIVE', 500, 'http://localhost:8081/weather/health', '支持实时天气、预报等功能'),
-('translation-service', '翻译服务', '多语言翻译服务', 'http://localhost:8082/translate', 'ACTIVE', 200, 'http://localhost:8082/translate/health', '支持100+语言互译'),
-('file-service', '文件处理服务', '文件上传下载和处理', 'http://localhost:8083/files', 'ACTIVE', 100, 'http://localhost:8083/files/health', '支持多种文件格式处理'),
-('ai-service', 'AI推理服务', 'AI模型推理服务', 'http://localhost:8084/ai', 'MAINTENANCE', 50, 'http://localhost:8084/ai/health', 'GPT、BERT等模型推理');
+('hr-service', '人力服务', '提供查询工作单位的服务', 'http://localhost:8089', 'ACTIVE', 10, 'http://localhost:8089/', '支持按照人名手机号查询工作单位的服务');
 
 -- 创建调用日志表（可选，用于记录API调用）
 CREATE TABLE IF NOT EXISTS api_call_logs (

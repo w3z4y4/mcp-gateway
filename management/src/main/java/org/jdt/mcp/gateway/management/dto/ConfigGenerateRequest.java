@@ -14,8 +14,8 @@ public class ConfigGenerateRequest {
     @NotEmpty(message = "Service IDs cannot be empty")
     private List<String> serviceIds;
 
-    //todo 是否从service中获取
-    private String baseUrl = "http://localhost:8089"; // 网关基础URL
+    // mcp-proxy基础URL
+    private String baseUrl = "http://localhost:8089";
 
     private Boolean toolCallbackEnable = true; // 是否启用工具回调
 
