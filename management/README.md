@@ -36,12 +36,3 @@ public enum ServiceStatus {
     DEPRECATED
 }
 ```
-
-Client
-↓ 配置文件指向
-MCP Gateway (baseUrl: http://localhost:8089)
-↓ 根据路径 /mcp/{serviceId} 路由到
-Real MCP Services:
-├── Weather Service (http://localhost:8081/weather)
-├── Translation Service (http://localhost:8082/translate)  
-└── File Service (http://localhost:8083/files)
