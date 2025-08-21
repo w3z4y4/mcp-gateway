@@ -1,6 +1,7 @@
 package org.jdt.mcp.gateway.atuh.service.impl;
 
 import lombok.extern.slf4j.Slf4j;
+import org.jdt.mcp.gateway.atuh.AuthEnum;
 import org.jdt.mcp.gateway.atuh.config.AuthConfiguration;
 import org.jdt.mcp.gateway.atuh.service.AuthService;
 import org.springframework.stereotype.Service;
@@ -60,7 +61,9 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
-    public Mono<Boolean> validateWithExternalService(String authKey) {
+    public Mono<Boolean> validateWithDatabaseService(String authKey) {
+        // todo 1. 检查数据库中是否有对应的key
+        // todo 2. 记录key的调用记录表
         return Mono.just(true);
     }
 
@@ -72,6 +75,9 @@ public class AuthServiceImpl implements AuthService {
         if (isAllowedIp(ip)){
             return Mono.just(true);
         }
-        return validateAuthKey(authKey);
+        if (authConfig.getAuthType() ==  AuthEnum.staticKey){
+            return validateAuthKey(authKey);
+        }
+        return validateWithDatabaseService(authKey);
     }
 }

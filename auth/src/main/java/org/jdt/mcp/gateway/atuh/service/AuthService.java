@@ -8,7 +8,7 @@ public interface AuthService {
     boolean isAllowedIp(String clientIp);
     Mono<Boolean> validateAuthKey(String authKey);
     Mono<Boolean> validateWithStaticKeys(String authKey);
-    Mono<Boolean> validateWithExternalService(String authKey);
+    Mono<Boolean> validateWithDatabaseService(String authKey);
 
     /**
      * 综合鉴权检查
