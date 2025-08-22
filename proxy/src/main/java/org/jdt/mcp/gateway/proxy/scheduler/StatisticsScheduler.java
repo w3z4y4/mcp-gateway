@@ -27,7 +27,7 @@ public class StatisticsScheduler {
      * 每小时刷新统计数据到数据库
      * 在每小时的第5分钟执行，避免与其他任务冲突
      */
-    @Scheduled(cron = "0 /5 * * * *")
+    @Scheduled(cron = "0 /5 * * * ?")
     public void flushStatistics() {
         log.debug("Starting 5 min statistics flush to database");
 
@@ -38,10 +38,9 @@ public class StatisticsScheduler {
     }
 
     /**
-     * 每天凌晨2点刷新前一天的统计数据
-     * 确保前一天的数据完整保存到数据库
+     * 每小时执行一次
      */
-    @Scheduled(cron = "0 0 /1 * * *")
+    @Scheduled(cron = "0 0 /1 * * ?")
     public void flushStatisticsHourly() {
         log.info("Starting hourly statistics flush to database");
 
