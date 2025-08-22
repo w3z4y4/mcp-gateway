@@ -43,7 +43,7 @@ logging:
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{50} - %msg%n"
   file:
-    name: logs/management.log
+    name: logs/proxy.log
 
 # 管理配置
 management:
