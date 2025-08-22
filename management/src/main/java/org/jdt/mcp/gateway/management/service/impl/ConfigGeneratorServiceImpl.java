@@ -153,6 +153,7 @@ public class ConfigGeneratorServiceImpl implements ConfigGeneratorService {
                 .build();
     }
 
+    // todo 改成用实体管理
     private Map<String, Object> generateBaseConfig(ConfigGenerateRequest request) {
         List<ServiceConfigInfo> serviceConfigs = getServiceConfigs(request);
 
@@ -160,7 +161,6 @@ public class ConfigGeneratorServiceImpl implements ConfigGeneratorService {
         for (ServiceConfigInfo serviceConfig : serviceConfigs) {
             Map<String, Object> serviceConfigMap = new HashMap<>();
             serviceConfigMap.put("url", buildServiceUrl(request.getBaseUrl(), serviceConfig));
-            serviceConfigMap.put("type", "async"); // Spring AI格式默认用async
 
             connections.put(serviceConfig.getServiceId(), serviceConfigMap);
         }
@@ -168,6 +168,7 @@ public class ConfigGeneratorServiceImpl implements ConfigGeneratorService {
         Map<String, Object> mcpClient = new HashMap<>();
         mcpClient.put("toolcallback", Map.of("enable", request.getToolCallbackEnable()));
         mcpClient.put("sse", Map.of("connections", connections));
+        mcpClient.put("type", "async");
 
         Map<String, Object> springAi = new HashMap<>();
         springAi.put("mcp", Map.of("client", mcpClient));

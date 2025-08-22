@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 @MapperScan("org.jdt.mcp.gateway.mapper")
 @EnableTransactionManagement
 public class ManagementApp {
+    // todo Management改成webflux
     public static void main(String[] args) {
         SpringApplication.run(ManagementApp.class);
     }

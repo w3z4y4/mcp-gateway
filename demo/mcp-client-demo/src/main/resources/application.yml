@@ -16,12 +16,13 @@ spring.ai.openai:
       stream-options: true
 
 spring.ai.mcp.client:
-  toolcallback.enable: true
   sse:
     connections:
       server1:
         url: http://localhost:8080/mcp/hr-service?key=S71htUY--I0JcFpMtW-_gv4Jkg7cIMlYkZGqIHCl99M
   type: async
+  toolcallback:
+    enabled: true
 
 
 logging:
