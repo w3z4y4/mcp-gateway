@@ -44,7 +44,6 @@ public class AuthKeyFilter implements WebFilter {
         log.debug("Processing request for path: {}, connectionId: {}, key: {}"
                 , path, connectionId, authKey);
 
-        // todo 传递验证信息，后续的如何从context里拿到鉴权信息
         // 验证认证key
         return authService.integrationValidate(path,ip,authKey)
                 .flatMap(isValid -> {
