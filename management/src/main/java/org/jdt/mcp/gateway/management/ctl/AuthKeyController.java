@@ -17,6 +17,8 @@ import java.util.List;
 @Slf4j
 public class AuthKeyController {
 
+    //todo 增加缓存，申请auth key后缓存到redis，auth模块优先从缓存中检查，再鉴权
+
     private final AuthKeyManagementService authKeyManagementService;
 
     public AuthKeyController(AuthKeyManagementService authKeyManagementService) {

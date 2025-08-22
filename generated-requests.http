@@ -1,0 +1,93 @@
+
+###
+GET http://localhost:9080/api/management/auth-keys?
+    userId=001025821&
+    serviceId=hr-service
+
+<> 2025-08-21T102332.200.json
+
+### 申请key
+POST http://localhost:9080/api/management/auth-keys/apply
+Content-Type: application/json
+
+{
+  "userId": "001025821",
+  "serviceId": "hr-service",
+  "remarks": "test"
+}
+
+<> 2025-08-22T111249.200.json
+<> 2025-08-22T002510.409.json
+<> 2025-08-21T102605.200.json
+
+###
+POST http://localhost:9080/api/management/config/yaml
+Content-Type: application/json
+
+{
+  "userId": "001025821",
+  "serviceIds": ["hr-service"],
+  "baseUrl": "http://localhost:9080",
+  "toolCallbackEnable": true,
+  "timeout": 60,
+  "autoApprove": true
+}
+
+<> mcp-client-config.yml
+<> 2025-08-21T102850.400.json
+
+###
+POST http://localhost:9080/api/management/config/json
+Content-Type: application/json
+
+{
+  "userId": "001025821",
+  "serviceIds": ["hr-service"],
+  "baseUrl": "http://localhost:9080",
+  "toolCallbackEnable": true,
+  "timeout": 60,
+  "autoApprove": false
+}
+
+<> mcp-client-config-1.json
+<> mcp-client-config.json
+
+### 预览配置
+POST http://localhost:9080/api/management/config/yaml/preview
+Content-Type: application/json
+
+{
+  "userId": "001025821",
+  "serviceIds": ["hr-service"],
+  "baseUrl": "http://localhost:8089"
+}
+
+<> 2025-08-22T084859.200.yaml
+<> 2025-08-22T000533.200.yaml
+<> 2025-08-21T103809.200.yaml
+
+###
+POST http://localhost:9080/api/management/services/hr-service/health-check
+
+<> 2025-08-21T145214.200.json
+
+###
+POST http://localhost:8080/api/management/config/yaml/preview
+
+###
+GET http://localhost:9080/mcp/hr-service?key=S71htUY--I0JcFpMtW-_gv4Jkg7cIMlYkZGqIHCl99M
+
+<> 2025-08-22T001020.409.json
+<> 2025-08-22T001010.404.json
+
+###
+GET http://localhost:9080/api/management/auth-keys?
+    userId={{$random.alphanumeric(8)}}&
+    serviceId={{$random.alphanumeric(8)}}&
+    isActive=false
+
+###
+GET /demo/simple
+
+###
+DELETE http://localhost:9080/api/management/auth-keys/user/{{userId}}/service/{{serviceId}}
