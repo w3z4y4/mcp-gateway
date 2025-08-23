@@ -1,4 +1,5 @@
 # MCP Gateway - 企业级MCP API网关
+# [MCP Gateway - Enterprise-grade MCP API Gateway](README_en.md)
 
 🚀 为MCP生态系统提供高性能协议转换、服务管理、鉴权和流量治理的完整解决方案
 
