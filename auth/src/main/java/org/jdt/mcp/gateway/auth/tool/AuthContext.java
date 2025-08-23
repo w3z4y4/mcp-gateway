@@ -1,6 +1,7 @@
-package org.jdt.mcp.gateway.auth;
+package org.jdt.mcp.gateway.auth.tool;
 
 import lombok.extern.slf4j.Slf4j;
+import org.jdt.mcp.gateway.core.constant.AuthConstants;
 import reactor.util.context.Context;
 import reactor.util.context.ContextView;
 

@@ -1,7 +1,7 @@
 package org.jdt.mcp.gateway.proxy.ctl;
 
 import lombok.extern.slf4j.Slf4j;
-import org.jdt.mcp.gateway.proxy.McpProxyHandler;
+import org.jdt.mcp.gateway.proxy.handler.McpProxyHandler;
 import org.jdt.mcp.gateway.proxy.service.MCPDiscoveryService;
 import org.jdt.mcp.gateway.proxy.service.StatisticsService;
 import org.springframework.http.MediaType;

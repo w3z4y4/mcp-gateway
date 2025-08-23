@@ -1,7 +1,7 @@
 package org.jdt.mcp.gateway.proxy.service.impl;
 
 import lombok.extern.slf4j.Slf4j;
-import org.jdt.mcp.gateway.auth.AuthContextHelper;
+import org.jdt.mcp.gateway.auth.tool.AuthContextHelper;
 import org.jdt.mcp.gateway.core.dto.ServiceStatsData;
 import org.jdt.mcp.gateway.core.entity.ServiceStatisticsEntity;
 import org.jdt.mcp.gateway.mapper.AuthKeyMapper;

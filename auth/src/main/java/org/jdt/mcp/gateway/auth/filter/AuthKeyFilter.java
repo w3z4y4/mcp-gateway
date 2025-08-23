@@ -1,4 +1,4 @@
-package org.jdt.mcp.gateway.auth;
+package org.jdt.mcp.gateway.auth.filter;
 
 import lombok.extern.slf4j.Slf4j;
 import org.jdt.mcp.gateway.auth.service.AuthService;
