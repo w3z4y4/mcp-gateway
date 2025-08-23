@@ -1,7 +1,7 @@
 package org.jdt.mcp.gateway.management.service;
 
-import org.jdt.mcp.gateway.management.dto.AuthKeyApplyRequest;
-import org.jdt.mcp.gateway.management.dto.AuthKeyResponse;
+import org.jdt.mcp.gateway.core.dto.AuthKeyApplyRequest;
+import org.jdt.mcp.gateway.core.dto.AuthKeyResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 

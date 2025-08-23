@@ -2,8 +2,8 @@ package org.jdt.mcp.gateway.management.ctl;
 
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
-import org.jdt.mcp.gateway.management.dto.AuthKeyApplyRequest;
-import org.jdt.mcp.gateway.management.dto.AuthKeyResponse;
+import org.jdt.mcp.gateway.core.dto.AuthKeyApplyRequest;
+import org.jdt.mcp.gateway.core.dto.AuthKeyResponse;
 import org.jdt.mcp.gateway.management.service.AuthKeyManagementService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -16,8 +16,6 @@ import java.util.List;
 @RequestMapping("/api/management/auth-keys")
 @Slf4j
 public class AuthKeyController {
-
-    //todo 增加缓存，申请auth key后缓存到redis，auth模块优先从缓存中检查，再鉴权
 
     private final AuthKeyManagementService authKeyManagementService;
 

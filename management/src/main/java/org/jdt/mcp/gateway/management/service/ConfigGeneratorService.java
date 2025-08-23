@@ -1,8 +1,8 @@
 package org.jdt.mcp.gateway.management.service;
 
-import org.jdt.mcp.gateway.management.dto.ConfigGenerateRequest;
-import org.jdt.mcp.gateway.management.dto.ConfigValidationResult;
-import org.jdt.mcp.gateway.management.dto.ServiceConfigInfo;
+import org.jdt.mcp.gateway.core.dto.ConfigGenerateRequest;
+import org.jdt.mcp.gateway.core.dto.ConfigValidationResult;
+import org.jdt.mcp.gateway.core.dto.ServiceConfigInfo;
 
 import java.util.List;
 

@@ -3,8 +3,8 @@ package org.jdt.mcp.gateway.management.service;
 import org.jdt.mcp.gateway.core.entity.MCPServiceEntity;
 import org.jdt.mcp.gateway.core.entity.ServiceStatus;
 
-import org.jdt.mcp.gateway.management.dto.MCPServiceCreateRequest;
-import org.jdt.mcp.gateway.management.dto.MCPServiceUpdateRequest;
+import org.jdt.mcp.gateway.core.dto.MCPServiceCreateRequest;
+import org.jdt.mcp.gateway.core.dto.MCPServiceUpdateRequest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import java.util.List;

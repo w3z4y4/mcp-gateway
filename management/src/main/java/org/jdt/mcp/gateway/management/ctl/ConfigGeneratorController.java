@@ -2,7 +2,7 @@ package org.jdt.mcp.gateway.management.ctl;
 
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
-import org.jdt.mcp.gateway.management.dto.ConfigGenerateRequest;
+import org.jdt.mcp.gateway.core.dto.ConfigGenerateRequest;
 import org.jdt.mcp.gateway.management.service.ConfigGeneratorService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;

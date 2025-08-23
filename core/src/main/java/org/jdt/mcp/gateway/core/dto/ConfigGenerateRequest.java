@@ -1,4 +1,4 @@
-package org.jdt.mcp.gateway.management.dto;
+package org.jdt.mcp.gateway.core.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
