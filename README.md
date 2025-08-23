@@ -424,6 +424,12 @@ ENTRYPOINT ["java", "-jar", "/app.jar"]
     - 验证数据库权限
     - 确认防火墙设置
 
+## RoadMap
+
+1. 简化management和proxy繁琐的代码
+2. 更完善的指标采集功能
+3. 增加流量控制模块
+
 ## 贡献指南
 
 1. Fork 项目
