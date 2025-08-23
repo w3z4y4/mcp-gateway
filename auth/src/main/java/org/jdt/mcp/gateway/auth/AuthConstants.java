@@ -1,4 +1,4 @@
-package org.jdt.mcp.gateway.atuh;
+package org.jdt.mcp.gateway.auth;
 
 public class AuthConstants {
     public static final String AUTH_KEY = "auth_key";

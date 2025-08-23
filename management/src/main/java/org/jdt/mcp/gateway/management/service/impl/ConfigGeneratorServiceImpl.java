@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.jdt.mcp.gateway.core.entity.AuthKeyEntity;
+import org.jdt.mcp.gateway.core.entity.MCPClientConfig;
 import org.jdt.mcp.gateway.core.entity.MCPServiceEntity;
 import org.jdt.mcp.gateway.core.entity.ServiceStatus;
 import org.jdt.mcp.gateway.management.dto.ConfigGenerateRequest;
@@ -44,27 +45,28 @@ public class ConfigGeneratorServiceImpl implements ConfigGeneratorService {
 
     @Override
     public String generateYamlConfig(ConfigGenerateRequest request) {
-        Map<String, Object> config = generateBaseConfig(request);
-        return yaml.dump(config);
+        MCPClientConfig config = buildMCPClientConfig(request);
+
+        // 转换为Map用于YAML序列化
+        Map<String, Object> configMap = convertConfigToMap(config);
+        return yaml.dump(configMap);
     }
 
     @Override
     public String generateJsonConfig(ConfigGenerateRequest request) {
         List<ServiceConfigInfo> serviceConfigs = getServiceConfigs(request);
 
-        Map<String, Object> connections = new HashMap<>();
+        Map<String, ServiceConnectionJsonConfig> connections = new HashMap<>();
         for (ServiceConfigInfo serviceConfig : serviceConfigs) {
-            Map<String, Object> serviceConfigMap = new HashMap<>();
-            serviceConfigMap.put("url", buildServiceUrl(request.getBaseUrl(), serviceConfig));
-            serviceConfigMap.put("type", "sse"); // 默认使用sse类型
-            serviceConfigMap.put("timeout", request.getTimeout());
-            serviceConfigMap.put("disabled", false);
+            ServiceConnectionJsonConfig jsonConfig = ServiceConnectionJsonConfig.builder()
+                    .url(buildServiceUrl(request.getBaseUrl(), serviceConfig))
+                    .type("sse")
+                    .timeout(request.getTimeout())
+                    .disabled(false)
+                    .autoApprove(request.getAutoApprove() ? Collections.emptyList() : null)
+                    .build();
 
-            if (request.getAutoApprove()) {
-                serviceConfigMap.put("autoApprove", Collections.emptyList());
-            }
-
-            connections.put(serviceConfig.getServiceId(), serviceConfigMap);
+            connections.put(serviceConfig.getServiceId(), jsonConfig);
         }
 
         try {
@@ -153,27 +155,72 @@ public class ConfigGeneratorServiceImpl implements ConfigGeneratorService {
                 .build();
     }
 
-    // todo 改成用实体管理
-    private Map<String, Object> generateBaseConfig(ConfigGenerateRequest request) {
+    /**
+     * 构建MCP客户端配置实体
+     */
+    private MCPClientConfig buildMCPClientConfig(ConfigGenerateRequest request) {
         List<ServiceConfigInfo> serviceConfigs = getServiceConfigs(request);
 
-        Map<String, Object> connections = new HashMap<>();
+        // 构建服务连接配置
+        Map<String, MCPClientConfig.ServiceConnectionConfig> connections = new HashMap<>();
         for (ServiceConfigInfo serviceConfig : serviceConfigs) {
-            Map<String, Object> serviceConfigMap = new HashMap<>();
-            serviceConfigMap.put("url", buildServiceUrl(request.getBaseUrl(), serviceConfig));
+            MCPClientConfig.ServiceConnectionConfig connectionConfig =
+                    MCPClientConfig.ServiceConnectionConfig.builder()
+                            .url(buildServiceUrl(request.getBaseUrl(), serviceConfig))
+                            .timeout(request.getTimeout())
+                            .disabled(false)
+                            .autoApprove(request.getAutoApprove() ? Collections.emptyList() : null)
+                            .build();
 
-            connections.put(serviceConfig.getServiceId(), serviceConfigMap);
+            connections.put(serviceConfig.getServiceId(), connectionConfig);
         }
 
-        Map<String, Object> mcpClient = new HashMap<>();
-        mcpClient.put("toolcallback", Map.of("enable", request.getToolCallbackEnable()));
-        mcpClient.put("sse", Map.of("connections", connections));
-        mcpClient.put("type", "async");
+        // 构建完整配置树
+        MCPClientConfig.SSEConfig sseConfig = MCPClientConfig.SSEConfig.builder()
+                .connections(connections)
+                .build();
 
-        Map<String, Object> springAi = new HashMap<>();
-        springAi.put("mcp", Map.of("client", mcpClient));
+        MCPClientConfig.ToolCallbackConfig toolCallbackConfig = MCPClientConfig.ToolCallbackConfig.builder()
+                .enable(request.getToolCallbackEnable())
+                .build();
 
-        return Map.of("spring", Map.of("ai", springAi));
+        MCPClientConfig.ClientConfig clientConfig = MCPClientConfig.ClientConfig.builder()
+                .toolcallback(toolCallbackConfig)
+                .sse(sseConfig)
+                .type("async")
+                .build();
+
+        MCPClientConfig.MCPConfig mcpConfig = MCPClientConfig.MCPConfig.builder()
+                .client(clientConfig)
+                .build();
+
+        MCPClientConfig.AIConfig aiConfig = MCPClientConfig.AIConfig.builder()
+                .mcp(mcpConfig)
+                .build();
+
+        MCPClientConfig.SpringConfig springConfig = MCPClientConfig.SpringConfig.builder()
+                .ai(aiConfig)
+                .build();
+
+        return MCPClientConfig.builder()
+                .spring(springConfig)
+                .build();
+    }
+
+    /**
+     * 将配置实体转换为Map（用于YAML序列化）
+     */
+    private Map<String, Object> convertConfigToMap(MCPClientConfig config) {
+        try {
+            // 使用ObjectMapper转换为Map
+            String json = objectMapper.writeValueAsString(config);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> map = objectMapper.readValue(json, Map.class);
+            return map;
+        } catch (JsonProcessingException e) {
+            log.error("Error converting config to map", e);
+            throw new RuntimeException("Failed to convert config to map", e);
+        }
     }
 
     private List<ServiceConfigInfo> getServiceConfigs(ConfigGenerateRequest request) {
@@ -206,5 +253,18 @@ public class ConfigGeneratorServiceImpl implements ConfigGeneratorService {
         }
 
         return url;
+    }
+
+    /**
+     * JSON格式的服务连接配置（内部类）
+     */
+    @lombok.Data
+    @lombok.Builder
+    private static class ServiceConnectionJsonConfig {
+        private String url;
+        private String type;
+        private Integer timeout;
+        private Boolean disabled;
+        private List<String> autoApprove;
     }
 }

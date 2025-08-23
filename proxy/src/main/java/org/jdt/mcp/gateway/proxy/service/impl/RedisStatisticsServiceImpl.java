@@ -1,36 +1,32 @@
 package org.jdt.mcp.gateway.proxy.service.impl;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.jdt.mcp.gateway.atuh.AuthContextHelper;
+import org.jdt.mcp.gateway.auth.AuthContextHelper;
 import org.jdt.mcp.gateway.core.entity.ServiceStatisticsEntity;
 import org.jdt.mcp.gateway.mapper.ServiceStatisticsMapper;
 import org.jdt.mcp.gateway.proxy.config.ProxyConfiguration;
 import org.jdt.mcp.gateway.proxy.service.StatisticsService;
-import org.springframework.data.redis.core.ReactiveRedisTemplate;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ServerWebExchange;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Set;
+
+import static org.jdt.mcp.gateway.core.constant.RedisConstant.AUTH_KEY_STATUS_PREFIX;
+import static org.jdt.mcp.gateway.core.constant.RedisConstant.USER_SET_KEY_PREFIX;
 
 @Slf4j
 @Service
 public class RedisStatisticsServiceImpl implements StatisticsService {
 
-    private static final String STATS_KEY_PREFIX = "mcp:stats:";
-    private static final String DAILY_STATS_KEY_PREFIX = "mcp:daily:";
-    private static final String USER_SET_KEY_PREFIX = "mcp:users:";
+
     private static final Duration CACHE_EXPIRE = Duration.ofHours(25); // 25小时过期
 
     private final ProxyConfiguration proxyConfig;
@@ -93,7 +89,7 @@ public class RedisStatisticsServiceImpl implements StatisticsService {
     private void recordRequestAsync(String serviceId, String userId, int statusCode, long responseTimeMs) {
         Mono.fromRunnable(() -> {
             String today = LocalDate.now().toString();
-            String statsKey = STATS_KEY_PREFIX + serviceId + ":" + today;
+            String statsKey = AUTH_KEY_STATUS_PREFIX + serviceId + ":" + today;
             String userSetKey = USER_SET_KEY_PREFIX + serviceId + ":" + today;
 
             try {
@@ -173,7 +169,7 @@ public class RedisStatisticsServiceImpl implements StatisticsService {
     @Override
     public Mono<ServiceStats> getRealtimeServiceStats(String serviceId) {
         String today = LocalDate.now().toString();
-        String statsKey = STATS_KEY_PREFIX + serviceId + ":" + today;
+        String statsKey = AUTH_KEY_STATUS_PREFIX + serviceId + ":" + today;
         String userSetKey = USER_SET_KEY_PREFIX + serviceId + ":" + today;
 
         return Mono.zip(
@@ -205,7 +201,7 @@ public class RedisStatisticsServiceImpl implements StatisticsService {
 
     @Override
     public Mono<Void> clearStats() {
-        String pattern = STATS_KEY_PREFIX + "*";
+        String pattern = AUTH_KEY_STATUS_PREFIX + "*";
         return redisTemplate.keys(pattern)
                 .flatMap(redisTemplate::delete)
                 .then()
@@ -214,7 +210,7 @@ public class RedisStatisticsServiceImpl implements StatisticsService {
 
     @Override
     public Mono<Void> flushStatisticsToDatabase() {
-        return redisTemplate.keys(STATS_KEY_PREFIX + "*")
+        return redisTemplate.keys(AUTH_KEY_STATUS_PREFIX + "*")
                 .flatMap(this::flushSingleServiceStats)
                 .then()
                 .doOnSuccess(v -> log.info("Statistics flushed to database"))
@@ -228,7 +224,7 @@ public class RedisStatisticsServiceImpl implements StatisticsService {
         return Mono.fromRunnable(() -> {
             try {
                 // 解析serviceId和date
-                String[] parts = statsKey.replace(STATS_KEY_PREFIX, "").split(":");
+                String[] parts = statsKey.replace(AUTH_KEY_STATUS_PREFIX, "").split(":");
                 if (parts.length < 2) return;
 
                 String serviceId = parts[0];

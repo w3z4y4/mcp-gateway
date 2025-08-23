@@ -17,12 +17,14 @@ import reactor.core.scheduler.Schedulers;
 import java.time.Duration;
 import java.util.List;
 
+import static org.jdt.mcp.gateway.core.constant.RedisConstant.ACTIVE_SERVICES_SET_KEY;
+import static org.jdt.mcp.gateway.core.constant.RedisConstant.SERVICE_CACHE_KEY_PREFIX;
+
 @Slf4j
 @Service
 public class RedisBasedMCPDiscoveryServiceImpl implements MCPDiscoveryService {
 
-    private static final String SERVICE_CACHE_KEY_PREFIX = "mcp:service:";
-    private static final String ACTIVE_SERVICES_SET_KEY = "mcp:active_services";
+
     private static final Duration CACHE_EXPIRE = Duration.ofMinutes(30);
 
     private final MCPServiceMapper mcpServiceMapper;

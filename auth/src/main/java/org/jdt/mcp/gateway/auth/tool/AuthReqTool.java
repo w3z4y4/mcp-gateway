@@ -1,4 +1,4 @@
-package org.jdt.mcp.gateway.atuh.tool;
+package org.jdt.mcp.gateway.auth.tool;
 
 import org.springframework.http.server.reactive.ServerHttpRequest;
 

@@ -1,8 +1,9 @@
-package org.jdt.mcp.gateway.atuh.service.impl;
+package org.jdt.mcp.gateway.auth.service.impl;
 
 import lombok.extern.slf4j.Slf4j;
-import org.jdt.mcp.gateway.atuh.config.AuthConfiguration;
-import org.jdt.mcp.gateway.atuh.service.AuthService;
+import org.jdt.mcp.gateway.service.RedisAuthKeyService;
+import org.jdt.mcp.gateway.auth.config.AuthConfiguration;
+import org.jdt.mcp.gateway.auth.service.AuthService;
 import org.jdt.mcp.gateway.core.entity.AuthCallRecord;
 import org.jdt.mcp.gateway.core.entity.AuthKeyEntity;
 import org.jdt.mcp.gateway.core.entity.AuthType;
@@ -24,16 +25,19 @@ public class AuthServiceImpl implements AuthService {
     private final AntPathMatcher pathMatcher;
     private final AuthKeyMapper authKeyMapper;
     private final AuthCallLogMapper authCallLogMapper;
+    private final RedisAuthKeyService redisAuthKeyService;
 
     private final Sinks.Many<AuthCallRecord> logSink;
 
     public AuthServiceImpl(AuthConfiguration authConfig,
                            AuthKeyMapper authKeyMapper,
-                           AuthCallLogMapper authCallLogMapper) {
+                           AuthCallLogMapper authCallLogMapper,
+                           RedisAuthKeyService redisAuthKeyService) {
         this.authConfig = authConfig;
         this.pathMatcher = new AntPathMatcher();
         this.authKeyMapper = authKeyMapper;
         this.authCallLogMapper = authCallLogMapper;
+        this.redisAuthKeyService = redisAuthKeyService;
         // 初始化异步日志处理流
         this.logSink = Sinks.many().multicast().onBackpressureBuffer();
         setupAsyncLogProcessor();
@@ -86,16 +90,56 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public Mono<Boolean> validateWithDatabaseService(String authKey) {
         return Mono.fromCallable(() -> {
-                    // 1. 检查数据库中是否有对应的key
-                    boolean isValid = authKeyMapper.isValidKey(authKey);
+                    // 1. 优先检查Redis缓存中的无效key
+                    if (redisAuthKeyService.isInvalidKeyCached(authKey)) {
+                        log.debug("Auth key found in invalid cache: {}", maskKey(authKey));
+                        return false;
+                    }
 
+                    // 2. 从Redis缓存获取认证key信息
+                    AuthKeyEntity cachedEntity = redisAuthKeyService.getAuthKeyFromCache(authKey);
+                    if (cachedEntity != null) {
+                        log.debug("Auth key found in cache: {}", maskKey(authKey));
+
+                        boolean isValid = isAuthKeyValid(cachedEntity);
+                        if (isValid) {
+                            // 异步更新最后使用时间（缓存和数据库）
+                            CompletableFuture.runAsync(() -> {
+                                try {
+                                    redisAuthKeyService.updateLastUsedTime(authKey);
+                                    authKeyMapper.updateLastUsedTime(authKey);
+                                } catch (Exception e) {
+                                    log.warn("Failed to update last used time for cached key: {}",
+                                            maskKey(authKey), e);
+                                }
+                            }, Schedulers.boundedElastic().createWorker()::schedule);
+                        }
+                        return isValid;
+                    }
+
+                    // 3. 缓存未命中，查询数据库
+                    log.debug("Cache miss, querying database for key: {}", maskKey(authKey));
+                    AuthKeyEntity dbEntity = authKeyMapper.findByKeyHash(authKey);
+
+                    if (dbEntity == null) {
+                        log.warn("Auth key not found in database: {}", maskKey(authKey));
+                        // 缓存无效key，防止频繁查询
+                        redisAuthKeyService.cacheInvalidKey(authKey);
+                        return false;
+                    }
+
+                    // 4. 将数据库结果缓存到Redis
+                    redisAuthKeyService.cacheAuthKey(authKey, dbEntity);
+
+                    boolean isValid = isAuthKeyValid(dbEntity);
                     if (isValid) {
                         log.info("Database key validation successful for key: {}", maskKey(authKey));
 
-                        // 2. 异步更新最后使用时间
+                        // 异步更新最后使用时间
                         CompletableFuture.runAsync(() -> {
                             try {
                                 authKeyMapper.updateLastUsedTime(authKey);
+                                redisAuthKeyService.updateLastUsedTime(authKey);
                             } catch (Exception e) {
                                 log.warn("Failed to update last used time for key: {}",
                                         maskKey(authKey), e);
@@ -152,6 +196,18 @@ public class AuthServiceImpl implements AuthService {
                         }
                     }
                 });
+    }
+
+    /**
+     * 检查AuthKeyEntity是否有效
+     */
+    private boolean isAuthKeyValid(AuthKeyEntity entity) {
+        if (!entity.getIsActive()) {
+            return false;
+        }
+
+        // 检查过期时间
+        return entity.getExpiresAt() == null || !entity.getExpiresAt().isBefore(java.time.LocalDateTime.now());
     }
 
     /**

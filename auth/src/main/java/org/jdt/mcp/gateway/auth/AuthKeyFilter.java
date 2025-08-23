@@ -1,7 +1,7 @@
-package org.jdt.mcp.gateway.atuh;
+package org.jdt.mcp.gateway.auth;
 
 import lombok.extern.slf4j.Slf4j;
-import org.jdt.mcp.gateway.atuh.service.AuthService;
+import org.jdt.mcp.gateway.auth.service.AuthService;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
@@ -13,7 +13,7 @@ import org.springframework.web.server.WebFilter;
 import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
 
-import static org.jdt.mcp.gateway.atuh.tool.AuthReqTool.*;
+import static org.jdt.mcp.gateway.auth.tool.AuthReqTool.*;
 
 /**
  * authKey过滤器

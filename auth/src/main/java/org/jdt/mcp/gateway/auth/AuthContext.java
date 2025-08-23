@@ -1,4 +1,4 @@
-package org.jdt.mcp.gateway.atuh;
+package org.jdt.mcp.gateway.auth;
 
 import lombok.extern.slf4j.Slf4j;
 import reactor.util.context.Context;

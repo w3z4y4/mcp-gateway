@@ -1,6 +1,5 @@
-package org.jdt.mcp.gateway.atuh.service;
+package org.jdt.mcp.gateway.auth.service;
 
-import org.springframework.http.server.reactive.ServerHttpRequest;
 import reactor.core.publisher.Mono;
 
 public interface AuthService {

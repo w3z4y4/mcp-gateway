@@ -1,4 +1,4 @@
-package org.jdt.mcp.gateway.atuh.config;
+package org.jdt.mcp.gateway.auth.config;
 
 import lombok.Data;
 import org.jdt.mcp.gateway.core.entity.AuthType;

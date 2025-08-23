@@ -1,4 +1,4 @@
-package org.jdt.mcp.gateway.proxy.config;
+package org.jdt.mcp.gateway.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
