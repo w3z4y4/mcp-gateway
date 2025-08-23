@@ -1,7 +1,5 @@
 server:
   port: 9080
-  servlet:
-    context-path: /
 
 spring:
   application:
@@ -24,6 +22,10 @@ spring:
     serialization:
       write-dates-as-timestamps: false
 
+  # WebFlux 配置
+  webflux:
+    base-path: /
+
 # MyBatis配置
 mybatis:
   type-aliases-package: org.jdt.mcp.gateway.core.entity
@@ -36,6 +38,8 @@ logging:
   level:
     org.jdt.mcp.gateway: DEBUG
     org.apache.ibatis: DEBUG
+    reactor.netty.http.server: DEBUG
+    org.springframework.web.reactive: DEBUG
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{50} - %msg%n"
   file:
@@ -50,3 +54,12 @@ management:
   endpoint:
     health:
       show-details: always
+
+# Reactor调度器配置
+reactor:
+  netty:
+    # 配置IO线程数
+    ioWorkerCount: 4
+  schedulers:
+    # 配置弹性调度器线程数
+    bounded-elastic-size: 20

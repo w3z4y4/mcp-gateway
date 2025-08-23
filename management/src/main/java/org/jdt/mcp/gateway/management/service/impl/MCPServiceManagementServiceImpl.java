@@ -10,11 +10,14 @@ import org.jdt.mcp.gateway.management.service.MCPServiceManagementService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -24,122 +27,146 @@ import java.util.List;
 public class MCPServiceManagementServiceImpl implements MCPServiceManagementService {
 
     private final MCPServiceMapper serviceMapper;
-    private final RestTemplate restTemplate;
+    private final WebClient webClient;
 
-    public MCPServiceManagementServiceImpl(MCPServiceMapper serviceMapper, RestTemplate restTemplate) {
+    public MCPServiceManagementServiceImpl(MCPServiceMapper serviceMapper, WebClient webClient) {
         this.serviceMapper = serviceMapper;
-        this.restTemplate = restTemplate;
+        this.webClient = webClient;
     }
 
     @Override
-    public MCPServiceEntity createService(MCPServiceCreateRequest request) {
-        // 检查serviceId是否已存在
-        if (serviceMapper.findByServiceId(request.getServiceId()) != null) {
-            throw new IllegalArgumentException("Service ID already exists: " + request.getServiceId());
-        }
+    public Mono<MCPServiceEntity> createService(MCPServiceCreateRequest request) {
+        return Mono.fromCallable(() -> {
+            // 检查serviceId是否已存在
+            if (serviceMapper.findByServiceId(request.getServiceId()) != null) {
+                throw new IllegalArgumentException("Service ID already exists: " + request.getServiceId());
+            }
 
-        MCPServiceEntity service = MCPServiceEntity.builder()
-                .serviceId(request.getServiceId())
-                .name(request.getName())
-                .description(request.getDescription())
-                .endpoint(request.getEndpoint())
-                .status(request.getStatus())
-                .maxQps(request.getMaxQps())
-                .healthCheckUrl(request.getHealthCheckUrl())
-                .documentation(request.getDocumentation())
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
-                .build();
+            MCPServiceEntity service = MCPServiceEntity.builder()
+                    .serviceId(request.getServiceId())
+                    .name(request.getName())
+                    .description(request.getDescription())
+                    .endpoint(request.getEndpoint())
+                    .status(request.getStatus())
+                    .maxQps(request.getMaxQps())
+                    .healthCheckUrl(request.getHealthCheckUrl())
+                    .documentation(request.getDocumentation())
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
+                    .build();
 
-        serviceMapper.insert(service);
-        log.info("Created MCP service: {}", service.getServiceId());
-        return service;
+            serviceMapper.insert(service);
+            log.info("Created MCP service: {}", service.getServiceId());
+            return service;
+        }).subscribeOn(Schedulers.boundedElastic());
     }
 
     @Override
-    public MCPServiceEntity updateService(String serviceId, MCPServiceUpdateRequest request) {
-        MCPServiceEntity existing = getServiceByServiceId(serviceId);
+    public Mono<MCPServiceEntity> updateService(String serviceId, MCPServiceUpdateRequest request) {
+        return Mono.fromCallable(() -> {
+            MCPServiceEntity existing = getServiceByServiceIdSync(serviceId);
 
-        if (request.getName() != null) existing.setName(request.getName());
-        if (request.getDescription() != null) existing.setDescription(request.getDescription());
-        if (request.getEndpoint() != null) existing.setEndpoint(request.getEndpoint());
-        if (request.getStatus() != null) existing.setStatus(request.getStatus());
-        if (request.getMaxQps() != null) existing.setMaxQps(request.getMaxQps());
-        if (request.getHealthCheckUrl() != null) existing.setHealthCheckUrl(request.getHealthCheckUrl());
-        if (request.getDocumentation() != null) existing.setDocumentation(request.getDocumentation());
-        existing.setUpdatedAt(LocalDateTime.now());
+            if (request.getName() != null) existing.setName(request.getName());
+            if (request.getDescription() != null) existing.setDescription(request.getDescription());
+            if (request.getEndpoint() != null) existing.setEndpoint(request.getEndpoint());
+            if (request.getStatus() != null) existing.setStatus(request.getStatus());
+            if (request.getMaxQps() != null) existing.setMaxQps(request.getMaxQps());
+            if (request.getHealthCheckUrl() != null) existing.setHealthCheckUrl(request.getHealthCheckUrl());
+            if (request.getDocumentation() != null) existing.setDocumentation(request.getDocumentation());
+            existing.setUpdatedAt(LocalDateTime.now());
 
-        serviceMapper.update(existing);
-        log.info("Updated MCP service: {}", serviceId);
-        return existing;
+            serviceMapper.update(existing);
+            log.info("Updated MCP service: {}", serviceId);
+            return existing;
+        }).subscribeOn(Schedulers.boundedElastic());
     }
 
     @Override
-    public void deleteService(String serviceId) {
-        MCPServiceEntity existing = getServiceByServiceId(serviceId);
-        serviceMapper.deleteById(existing.getId());
-        log.info("Deleted MCP service: {}", serviceId);
+    public Mono<Void> deleteService(String serviceId) {
+        return Mono.fromRunnable(() -> {
+            MCPServiceEntity existing = getServiceByServiceIdSync(serviceId);
+            serviceMapper.deleteById(existing.getId());
+            log.info("Deleted MCP service: {}", serviceId);
+        }).subscribeOn(Schedulers.boundedElastic()).then();
     }
 
     @Override
-    public MCPServiceEntity getServiceByServiceId(String serviceId) {
+    public Mono<MCPServiceEntity> getServiceByServiceId(String serviceId) {
+        return Mono.fromCallable(() -> getServiceByServiceIdSync(serviceId))
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    @Override
+    public Mono<Page<MCPServiceEntity>> getServices(ServiceStatus status, String name, Pageable pageable) {
+        return Mono.fromCallable(() -> {
+            List<MCPServiceEntity> services = serviceMapper.findByConditions(status, name,
+                    (int) pageable.getOffset(), pageable.getPageSize());
+            long total = serviceMapper.countByConditions(status, name);
+            return (Page<MCPServiceEntity>) new PageImpl<>(services, pageable, total);
+        }).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    @Override
+    public Flux<MCPServiceEntity> getActiveServices() {
+        return Mono.fromCallable(() -> serviceMapper.findByStatus(ServiceStatus.ACTIVE))
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMapMany(Flux::fromIterable);
+    }
+
+    @Override
+    public Mono<MCPServiceEntity> updateServiceStatus(String serviceId, ServiceStatus status) {
+        return Mono.fromCallable(() -> {
+            MCPServiceEntity service = getServiceByServiceIdSync(serviceId);
+            service.setStatus(status);
+            service.setUpdatedAt(LocalDateTime.now());
+            serviceMapper.update(service);
+            log.info("Updated service {} status to {}", serviceId, status);
+            return service;
+        }).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    @Override
+    public Mono<Boolean> performHealthCheck(String serviceId) {
+        return getServiceByServiceId(serviceId)
+                .flatMap(service -> {
+                    String healthCheckUrl = service.getHealthCheckUrl();
+                    if (healthCheckUrl == null || healthCheckUrl.trim().isEmpty()) {
+                        // 如果没有健康检查URL，直接ping主endpoint
+                        healthCheckUrl = service.getEndpoint() + "/health";
+                    }
+
+                    return webClient.get()
+                            .uri(healthCheckUrl)
+                            .retrieve()
+                            .toBodilessEntity()
+                            .timeout(Duration.ofSeconds(10))
+                            .map(response -> {
+                                boolean isHealthy = response.getStatusCode().is2xxSuccessful();
+                                log.info("Health check for service {}: {}", serviceId, isHealthy ? "HEALTHY" : "UNHEALTHY");
+
+                                // 根据健康检查结果更新服务状态（异步）
+                                if (!isHealthy && service.getStatus() == ServiceStatus.ACTIVE) {
+                                    updateServiceStatus(serviceId, ServiceStatus.MAINTENANCE).subscribe();
+                                } else if (isHealthy && service.getStatus() == ServiceStatus.MAINTENANCE) {
+                                    updateServiceStatus(serviceId, ServiceStatus.ACTIVE).subscribe();
+                                }
+
+                                return isHealthy;
+                            })
+                            .onErrorResume(error -> {
+                                log.error("Health check failed for service {}: {}", serviceId, error.getMessage());
+                                // 健康检查失败时标记为维护状态（异步）
+                                updateServiceStatus(serviceId, ServiceStatus.MAINTENANCE).subscribe();
+                                return Mono.just(false);
+                            });
+                });
+    }
+
+    private MCPServiceEntity getServiceByServiceIdSync(String serviceId) {
         MCPServiceEntity service = serviceMapper.findByServiceId(serviceId);
         if (service == null) {
             throw new IllegalArgumentException("Service not found: " + serviceId);
         }
         return service;
-    }
-
-    @Override
-    public Page<MCPServiceEntity> getServices(ServiceStatus status, String name, Pageable pageable) {
-        List<MCPServiceEntity> services = serviceMapper.findByConditions(status, name,
-                (int) pageable.getOffset(), pageable.getPageSize());
-        long total = serviceMapper.countByConditions(status, name);
-        return new PageImpl<>(services, pageable, total);
-    }
-
-    @Override
-    public List<MCPServiceEntity> getActiveServices() {
-        return serviceMapper.findByStatus(ServiceStatus.ACTIVE);
-    }
-
-    @Override
-    public MCPServiceEntity updateServiceStatus(String serviceId, ServiceStatus status) {
-        MCPServiceEntity service = getServiceByServiceId(serviceId);
-        service.setStatus(status);
-        service.setUpdatedAt(LocalDateTime.now());
-        serviceMapper.update(service);
-        log.info("Updated service {} status to {}", serviceId, status);
-        return service;
-    }
-
-    @Override
-    public boolean performHealthCheck(String serviceId) {
-        MCPServiceEntity service = getServiceByServiceId(serviceId);
-        String healthCheckUrl = service.getHealthCheckUrl();
-
-        if (healthCheckUrl == null || healthCheckUrl.trim().isEmpty()) {
-            // 如果没有健康检查URL，直接ping主endpoint
-            healthCheckUrl = service.getEndpoint() + "/health";
-        }
-
-        try {
-            ResponseEntity<String> response = restTemplate.getForEntity(healthCheckUrl, String.class);
-            boolean isHealthy = response.getStatusCode().is2xxSuccessful();
-            log.info("Health check for service {}: {}", serviceId, isHealthy ? "HEALTHY" : "UNHEALTHY");
-
-            // 根据健康检查结果更新服务状态
-            if (!isHealthy && service.getStatus() == ServiceStatus.ACTIVE) {
-                updateServiceStatus(serviceId, ServiceStatus.MAINTENANCE);
-            } else if (isHealthy && service.getStatus() == ServiceStatus.MAINTENANCE) {
-                updateServiceStatus(serviceId, ServiceStatus.ACTIVE);
-            }
-
-            return isHealthy;
-        } catch (Exception e) {
-            log.error("Health check failed for service {}: {}", serviceId, e.getMessage());
-            updateServiceStatus(serviceId, ServiceStatus.MAINTENANCE);
-            return false;
-        }
     }
 }

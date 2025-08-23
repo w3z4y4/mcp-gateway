@@ -6,11 +6,12 @@ import org.jdt.mcp.gateway.core.dto.AuthKeyApplyRequest;
 import org.jdt.mcp.gateway.core.dto.AuthKeyResponse;
 import org.jdt.mcp.gateway.management.service.AuthKeyManagementService;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 @RestController
 @RequestMapping("/api/management/auth-keys")
@@ -27,77 +28,73 @@ public class AuthKeyController {
      * 用户申请MCP服务访问密钥
      */
     @PostMapping("/apply")
-    public ResponseEntity<AuthKeyResponse> applyAuthKey(@Valid @RequestBody AuthKeyApplyRequest request) {
+    public Mono<AuthKeyResponse> applyAuthKey(@Valid @RequestBody AuthKeyApplyRequest request) {
         log.info("User {} applying for auth key for service {}", request.getUserId(), request.getServiceId());
-        AuthKeyResponse response = authKeyManagementService.applyAuthKey(request);
-        return ResponseEntity.ok(response);
+        return authKeyManagementService.applyAuthKey(request);
     }
 
     /**
      * 获取用户的所有密钥
      */
     @GetMapping("/user/{userId}")
-    public ResponseEntity<List<AuthKeyResponse>> getUserAuthKeys(@PathVariable String userId) {
-        List<AuthKeyResponse> keys = authKeyManagementService.getUserAuthKeys(userId);
-        return ResponseEntity.ok(keys);
+    public Flux<AuthKeyResponse> getUserAuthKeys(@PathVariable String userId) {
+        return authKeyManagementService.getUserAuthKeys(userId);
     }
 
     /**
      * 分页查询所有密钥（管理员功能）
      */
     @GetMapping
-    public ResponseEntity<Page<AuthKeyResponse>> getAllAuthKeys(
+    public Mono<Page<AuthKeyResponse>> getAllAuthKeys(
             @RequestParam(required = false) String userId,
             @RequestParam(required = false) String serviceId,
             @RequestParam(required = false) Boolean isActive,
-            Pageable pageable) {
-        Page<AuthKeyResponse> keys = authKeyManagementService.getAllAuthKeys(userId, serviceId, isActive, pageable);
-        return ResponseEntity.ok(keys);
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        Pageable pageable = PageRequest.of(page, size);
+        return authKeyManagementService.getAllAuthKeys(userId, serviceId, isActive, pageable);
     }
 
     /**
      * 撤销密钥
      */
     @DeleteMapping("/{keyId}")
-    public ResponseEntity<Void> revokeAuthKey(@PathVariable Long keyId) {
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public Mono<Void> revokeAuthKey(@PathVariable Long keyId) {
         log.info("Revoking auth key: {}", keyId);
-        authKeyManagementService.revokeAuthKey(keyId);
-        return ResponseEntity.noContent().build();
+        return authKeyManagementService.revokeAuthKey(keyId);
     }
 
     /**
      * 激活/停用密钥
      */
     @PatchMapping("/{keyId}/status")
-    public ResponseEntity<AuthKeyResponse> updateKeyStatus(
+    public Mono<AuthKeyResponse> updateKeyStatus(
             @PathVariable Long keyId,
             @RequestParam Boolean isActive) {
         log.info("Updating auth key {} status to {}", keyId, isActive);
-        AuthKeyResponse response = authKeyManagementService.updateKeyStatus(keyId, isActive);
-        return ResponseEntity.ok(response);
+        return authKeyManagementService.updateKeyStatus(keyId, isActive);
     }
 
     /**
      * 续期密钥
      */
     @PostMapping("/{keyId}/renew")
-    public ResponseEntity<AuthKeyResponse> renewAuthKey(
+    public Mono<AuthKeyResponse> renewAuthKey(
             @PathVariable Long keyId,
             @RequestParam(required = false, defaultValue = "0") long extendHours) {
         log.info("Renewing auth key: {} for {} hours", keyId, extendHours);
-        AuthKeyResponse response = authKeyManagementService.renewAuthKey(keyId, extendHours);
-        return ResponseEntity.ok(response);
+        return authKeyManagementService.renewAuthKey(keyId, extendHours);
     }
 
     /**
      * 批量撤销用户的某个服务的所有密钥
      */
     @DeleteMapping("/user/{userId}/service/{serviceId}")
-    public ResponseEntity<Integer> revokeUserServiceKeys(
+    public Mono<Integer> revokeUserServiceKeys(
             @PathVariable String userId,
             @PathVariable String serviceId) {
         log.info("Revoking all keys for user {} and service {}", userId, serviceId);
-        int revokedCount = authKeyManagementService.revokeUserServiceKeys(userId, serviceId);
-        return ResponseEntity.ok(revokedCount);
+        return authKeyManagementService.revokeUserServiceKeys(userId, serviceId);
     }
 }

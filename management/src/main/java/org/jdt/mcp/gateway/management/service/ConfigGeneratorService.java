@@ -3,12 +3,12 @@ package org.jdt.mcp.gateway.management.service;
 import org.jdt.mcp.gateway.core.dto.ConfigGenerateRequest;
 import org.jdt.mcp.gateway.core.dto.ConfigValidationResult;
 import org.jdt.mcp.gateway.core.dto.ServiceConfigInfo;
-
-import java.util.List;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 public interface ConfigGeneratorService {
-    String generateYamlConfig(ConfigGenerateRequest request);
-    String generateJsonConfig(ConfigGenerateRequest request);
-    List<ServiceConfigInfo> getAvailableServicesForUser(String userId);
-    ConfigValidationResult validateConfigRequest(ConfigGenerateRequest request);
+    Mono<String> generateYamlConfig(ConfigGenerateRequest request);
+    Mono<String> generateJsonConfig(ConfigGenerateRequest request);
+    Flux<ServiceConfigInfo> getAvailableServicesForUser(String userId);
+    Mono<ConfigValidationResult> validateConfigRequest(ConfigGenerateRequest request);
 }

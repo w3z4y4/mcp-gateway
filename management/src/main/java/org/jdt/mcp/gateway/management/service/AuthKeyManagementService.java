@@ -4,15 +4,15 @@ import org.jdt.mcp.gateway.core.dto.AuthKeyApplyRequest;
 import org.jdt.mcp.gateway.core.dto.AuthKeyResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-
-import java.util.List;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 public interface AuthKeyManagementService {
-    AuthKeyResponse applyAuthKey(AuthKeyApplyRequest request);
-    List<AuthKeyResponse> getUserAuthKeys(String userId);
-    Page<AuthKeyResponse> getAllAuthKeys(String userId, String serviceId, Boolean isActive, Pageable pageable);
-    void revokeAuthKey(Long keyId);
-    AuthKeyResponse updateKeyStatus(Long keyId, Boolean isActive);
-    AuthKeyResponse renewAuthKey(Long keyId, long extendHours);
-    int revokeUserServiceKeys(String userId, String serviceId);
+    Mono<AuthKeyResponse> applyAuthKey(AuthKeyApplyRequest request);
+    Flux<AuthKeyResponse> getUserAuthKeys(String userId);
+    Mono<Page<AuthKeyResponse>> getAllAuthKeys(String userId, String serviceId, Boolean isActive, Pageable pageable);
+    Mono<Void> revokeAuthKey(Long keyId);
+    Mono<AuthKeyResponse> updateKeyStatus(Long keyId, Boolean isActive);
+    Mono<AuthKeyResponse> renewAuthKey(Long keyId, long extendHours);
+    Mono<Integer> revokeUserServiceKeys(String userId, String serviceId);
 }

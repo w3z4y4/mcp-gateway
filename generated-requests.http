@@ -11,7 +11,7 @@ POST http://localhost:9080/api/management/auth-keys/apply
 Content-Type: application/json
 
 {
-  "userId": "001025821",
+  "userId": "001025816",
   "serviceId": "hr-service",
   "remarks": "test"
 }
@@ -57,7 +57,7 @@ POST http://localhost:9080/api/management/config/yaml/preview
 Content-Type: application/json
 
 {
-  "userId": "001025821",
+  "userId": "001025816",
   "serviceIds": ["hr-service"],
   "baseUrl": "http://localhost:8089"
 }

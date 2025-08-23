@@ -16,6 +16,9 @@ import org.jdt.mcp.gateway.management.service.ConfigGeneratorService;
 import org.springframework.stereotype.Service;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -44,167 +47,175 @@ public class ConfigGeneratorServiceImpl implements ConfigGeneratorService {
     }
 
     @Override
-    public String generateYamlConfig(ConfigGenerateRequest request) {
-        MCPClientConfig config = buildMCPClientConfig(request);
-
-        // 转换为Map用于YAML序列化
-        Map<String, Object> configMap = convertConfigToMap(config);
-        return yaml.dump(configMap);
+    public Mono<String> generateYamlConfig(ConfigGenerateRequest request) {
+        return buildMCPClientConfig(request)
+                .map(this::convertConfigToMap)
+                .map(yaml::dump)
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     @Override
-    public String generateJsonConfig(ConfigGenerateRequest request) {
-        List<ServiceConfigInfo> serviceConfigs = getServiceConfigs(request);
+    public Mono<String> generateJsonConfig(ConfigGenerateRequest request) {
+        return getServiceConfigs(request)
+                .collectList()
+                .map(serviceConfigs -> {
+                    Map<String, ServiceConnectionJsonConfig> connections = new HashMap<>();
+                    for (ServiceConfigInfo serviceConfig : serviceConfigs) {
+                        ServiceConnectionJsonConfig jsonConfig = ServiceConnectionJsonConfig.builder()
+                                .url(buildServiceUrl(request.getBaseUrl(), serviceConfig))
+                                .type("sse")
+                                .timeout(request.getTimeout())
+                                .disabled(false)
+                                .autoApprove(request.getAutoApprove() ? Collections.emptyList() : null)
+                                .build();
 
-        Map<String, ServiceConnectionJsonConfig> connections = new HashMap<>();
-        for (ServiceConfigInfo serviceConfig : serviceConfigs) {
-            ServiceConnectionJsonConfig jsonConfig = ServiceConnectionJsonConfig.builder()
-                    .url(buildServiceUrl(request.getBaseUrl(), serviceConfig))
-                    .type("sse")
-                    .timeout(request.getTimeout())
-                    .disabled(false)
-                    .autoApprove(request.getAutoApprove() ? Collections.emptyList() : null)
-                    .build();
+                        connections.put(serviceConfig.getServiceId(), jsonConfig);
+                    }
 
-            connections.put(serviceConfig.getServiceId(), jsonConfig);
-        }
-
-        try {
-            return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(connections);
-        } catch (JsonProcessingException e) {
-            log.error("Error generating JSON config", e);
-            throw new RuntimeException("Failed to generate JSON config", e);
-        }
+                    try {
+                        return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(connections);
+                    } catch (JsonProcessingException e) {
+                        log.error("Error generating JSON config", e);
+                        throw new RuntimeException("Failed to generate JSON config", e);
+                    }
+                })
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     @Override
-    public List<ServiceConfigInfo> getAvailableServicesForUser(String userId) {
-        // 获取用户有权限的服务
-        List<AuthKeyEntity> userKeys = authKeyMapper.findByUserId(userId);
-        Set<String> authorizedServiceIds = userKeys.stream()
-                .filter(key -> key.getIsActive() &&
-                        (key.getExpiresAt() == null || key.getExpiresAt().isAfter(LocalDateTime.now())))
-                .map(AuthKeyEntity::getMCPServiceId)
-                .collect(Collectors.toSet());
-
-        // 获取所有激活的服务
-        List<MCPServiceEntity> activeServices = serviceMapper.findByStatus(ServiceStatus.ACTIVE);
-
-        return activeServices.stream()
-                .filter(service -> authorizedServiceIds.contains(service.getServiceId()))
-                .map(service -> {
-                    // 获取用户对应的密钥
-                    String authKey = userKeys.stream()
-                            .filter(key -> key.getMCPServiceId().equals(service.getServiceId()) &&
-                                    key.getIsActive() &&
+    public Flux<ServiceConfigInfo> getAvailableServicesForUser(String userId) {
+        return Mono.fromCallable(() -> {
+                    // 获取用户有权限的服务
+                    List<AuthKeyEntity> userKeys = authKeyMapper.findByUserId(userId);
+                    Set<String> authorizedServiceIds = userKeys.stream()
+                            .filter(key -> key.getIsActive() &&
                                     (key.getExpiresAt() == null || key.getExpiresAt().isAfter(LocalDateTime.now())))
-                            .map(AuthKeyEntity::getKeyHash)
-                            .findFirst()
-                            .orElse(null);
+                            .map(AuthKeyEntity::getMCPServiceId)
+                            .collect(Collectors.toSet());
 
-                    return ServiceConfigInfo.builder()
-                            .serviceId(service.getServiceId())
-                            .serviceName(service.getName())
-                            .endpoint(service.getEndpoint())
-                            .authKey(authKey)
-                            .maxQps(service.getMaxQps())
-                            .isActive(service.getStatus() == ServiceStatus.ACTIVE)
-                            .description(service.getDescription())
+                    // 获取所有激活的服务
+                    List<MCPServiceEntity> activeServices = serviceMapper.findByStatus(ServiceStatus.ACTIVE);
+
+                    return activeServices.stream()
+                            .filter(service -> authorizedServiceIds.contains(service.getServiceId()))
+                            .map(service -> {
+                                // 获取用户对应的密钥
+                                String authKey = userKeys.stream()
+                                        .filter(key -> key.getMCPServiceId().equals(service.getServiceId()) &&
+                                                key.getIsActive() &&
+                                                (key.getExpiresAt() == null || key.getExpiresAt().isAfter(LocalDateTime.now())))
+                                        .map(AuthKeyEntity::getKeyHash)
+                                        .findFirst()
+                                        .orElse(null);
+
+                                return ServiceConfigInfo.builder()
+                                        .serviceId(service.getServiceId())
+                                        .serviceName(service.getName())
+                                        .endpoint(service.getEndpoint())
+                                        .authKey(authKey)
+                                        .maxQps(service.getMaxQps())
+                                        .isActive(service.getStatus() == ServiceStatus.ACTIVE)
+                                        .description(service.getDescription())
+                                        .build();
+                            })
+                            .collect(Collectors.toList());
+                }).subscribeOn(Schedulers.boundedElastic())
+                .flatMapMany(Flux::fromIterable);
+    }
+
+    @Override
+    public Mono<ConfigValidationResult> validateConfigRequest(ConfigGenerateRequest request) {
+        return getAvailableServicesForUser(request.getUserId())
+                .collectMap(ServiceConfigInfo::getServiceId, service -> service)
+                .map(serviceMap -> {
+                    List<String> errors = new ArrayList<>();
+                    List<String> warnings = new ArrayList<>();
+                    int validServiceCount = 0;
+
+                    for (String serviceId : request.getServiceIds()) {
+                        ServiceConfigInfo service = serviceMap.get(serviceId);
+                        if (service == null) {
+                            errors.add("Service not found or not authorized: " + serviceId);
+                        } else if (!service.getIsActive()) {
+                            warnings.add("Service is not active: " + serviceId + " (" + service.getServiceName() + ")");
+                        } else if (service.getAuthKey() == null) {
+                            errors.add("No valid auth key found for service: " + serviceId);
+                        } else {
+                            validServiceCount++;
+                        }
+                    }
+
+                    if (request.getServiceIds().isEmpty()) {
+                        errors.add("At least one service must be selected");
+                    }
+
+                    if (request.getTimeout() != null && request.getTimeout() <= 0) {
+                        errors.add("Timeout must be positive");
+                    }
+
+                    return ConfigValidationResult.builder()
+                            .isValid(errors.isEmpty())
+                            .errors(errors)
+                            .warnings(warnings)
+                            .validServiceCount(validServiceCount)
+                            .totalServiceCount(request.getServiceIds().size())
                             .build();
                 })
-                .collect(Collectors.toList());
-    }
-
-    @Override
-    public ConfigValidationResult validateConfigRequest(ConfigGenerateRequest request) {
-        List<String> errors = new ArrayList<>();
-        List<String> warnings = new ArrayList<>();
-        int validServiceCount = 0;
-
-        List<ServiceConfigInfo> availableServices = getAvailableServicesForUser(request.getUserId());
-        Map<String, ServiceConfigInfo> serviceMap = availableServices.stream()
-                .collect(Collectors.toMap(ServiceConfigInfo::getServiceId, s -> s));
-
-        for (String serviceId : request.getServiceIds()) {
-            ServiceConfigInfo service = serviceMap.get(serviceId);
-            if (service == null) {
-                errors.add("Service not found or not authorized: " + serviceId);
-            } else if (!service.getIsActive()) {
-                warnings.add("Service is not active: " + serviceId + " (" + service.getServiceName() + ")");
-            } else if (service.getAuthKey() == null) {
-                errors.add("No valid auth key found for service: " + serviceId);
-            } else {
-                validServiceCount++;
-            }
-        }
-
-        if (request.getServiceIds().isEmpty()) {
-            errors.add("At least one service must be selected");
-        }
-
-        if (request.getTimeout() != null && request.getTimeout() <= 0) {
-            errors.add("Timeout must be positive");
-        }
-
-        return ConfigValidationResult.builder()
-                .isValid(errors.isEmpty())
-                .errors(errors)
-                .warnings(warnings)
-                .validServiceCount(validServiceCount)
-                .totalServiceCount(request.getServiceIds().size())
-                .build();
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     /**
      * 构建MCP客户端配置实体
      */
-    private MCPClientConfig buildMCPClientConfig(ConfigGenerateRequest request) {
-        List<ServiceConfigInfo> serviceConfigs = getServiceConfigs(request);
+    private Mono<MCPClientConfig> buildMCPClientConfig(ConfigGenerateRequest request) {
+        return getServiceConfigs(request)
+                .collectList()
+                .map(serviceConfigs -> {
+                    // 构建服务连接配置
+                    Map<String, MCPClientConfig.ServiceConnectionConfig> connections = new HashMap<>();
+                    for (ServiceConfigInfo serviceConfig : serviceConfigs) {
+                        MCPClientConfig.ServiceConnectionConfig connectionConfig =
+                                MCPClientConfig.ServiceConnectionConfig.builder()
+                                        .url(buildServiceUrl(request.getBaseUrl(), serviceConfig))
+                                        .timeout(request.getTimeout())
+                                        .disabled(false)
+                                        .autoApprove(request.getAutoApprove() ? Collections.emptyList() : null)
+                                        .build();
 
-        // 构建服务连接配置
-        Map<String, MCPClientConfig.ServiceConnectionConfig> connections = new HashMap<>();
-        for (ServiceConfigInfo serviceConfig : serviceConfigs) {
-            MCPClientConfig.ServiceConnectionConfig connectionConfig =
-                    MCPClientConfig.ServiceConnectionConfig.builder()
-                            .url(buildServiceUrl(request.getBaseUrl(), serviceConfig))
-                            .timeout(request.getTimeout())
-                            .disabled(false)
-                            .autoApprove(request.getAutoApprove() ? Collections.emptyList() : null)
+                        connections.put(serviceConfig.getServiceId(), connectionConfig);
+                    }
+
+                    // 构建完整配置树
+                    MCPClientConfig.SSEConfig sseConfig = MCPClientConfig.SSEConfig.builder()
+                            .connections(connections)
                             .build();
 
-            connections.put(serviceConfig.getServiceId(), connectionConfig);
-        }
+                    MCPClientConfig.ToolCallbackConfig toolCallbackConfig = MCPClientConfig.ToolCallbackConfig.builder()
+                            .enable(request.getToolCallbackEnable())
+                            .build();
 
-        // 构建完整配置树
-        MCPClientConfig.SSEConfig sseConfig = MCPClientConfig.SSEConfig.builder()
-                .connections(connections)
-                .build();
+                    MCPClientConfig.ClientConfig clientConfig = MCPClientConfig.ClientConfig.builder()
+                            .toolcallback(toolCallbackConfig)
+                            .sse(sseConfig)
+                            .type("async")
+                            .build();
 
-        MCPClientConfig.ToolCallbackConfig toolCallbackConfig = MCPClientConfig.ToolCallbackConfig.builder()
-                .enable(request.getToolCallbackEnable())
-                .build();
+                    MCPClientConfig.MCPConfig mcpConfig = MCPClientConfig.MCPConfig.builder()
+                            .client(clientConfig)
+                            .build();
 
-        MCPClientConfig.ClientConfig clientConfig = MCPClientConfig.ClientConfig.builder()
-                .toolcallback(toolCallbackConfig)
-                .sse(sseConfig)
-                .type("async")
-                .build();
+                    MCPClientConfig.AIConfig aiConfig = MCPClientConfig.AIConfig.builder()
+                            .mcp(mcpConfig)
+                            .build();
 
-        MCPClientConfig.MCPConfig mcpConfig = MCPClientConfig.MCPConfig.builder()
-                .client(clientConfig)
-                .build();
+                    MCPClientConfig.SpringConfig springConfig = MCPClientConfig.SpringConfig.builder()
+                            .ai(aiConfig)
+                            .build();
 
-        MCPClientConfig.AIConfig aiConfig = MCPClientConfig.AIConfig.builder()
-                .mcp(mcpConfig)
-                .build();
-
-        MCPClientConfig.SpringConfig springConfig = MCPClientConfig.SpringConfig.builder()
-                .ai(aiConfig)
-                .build();
-
-        return MCPClientConfig.builder()
-                .spring(springConfig)
-                .build();
+                    return MCPClientConfig.builder()
+                            .spring(springConfig)
+                            .build();
+                });
     }
 
     /**
@@ -223,22 +234,24 @@ public class ConfigGeneratorServiceImpl implements ConfigGeneratorService {
         }
     }
 
-    private List<ServiceConfigInfo> getServiceConfigs(ConfigGenerateRequest request) {
-        ConfigValidationResult validation = validateConfigRequest(request);
-        if (!validation.getIsValid()) {
-            throw new IllegalArgumentException("Invalid config request: " + String.join(", ", validation.getErrors()));
-        }
+    private Flux<ServiceConfigInfo> getServiceConfigs(ConfigGenerateRequest request) {
+        return validateConfigRequest(request)
+                .flatMapMany(validation -> {
+                    if (!validation.getIsValid()) {
+                        return Flux.error(new IllegalArgumentException("Invalid config request: " +
+                                String.join(", ", validation.getErrors())));
+                    }
 
-        List<ServiceConfigInfo> availableServices = getAvailableServicesForUser(request.getUserId());
-        Map<String, ServiceConfigInfo> serviceMap = availableServices.stream()
-                .collect(Collectors.toMap(ServiceConfigInfo::getServiceId, s -> s));
-
-        return request.getServiceIds().stream()
-                .map(serviceMap::get)
-                .filter(Objects::nonNull)
-                .filter(ServiceConfigInfo::getIsActive)
-                .filter(service -> service.getAuthKey() != null)
-                .collect(Collectors.toList());
+                    return getAvailableServicesForUser(request.getUserId())
+                            .collectMap(ServiceConfigInfo::getServiceId, service -> service)
+                            .flatMapMany(serviceMap ->
+                                    Flux.fromIterable(request.getServiceIds())
+                                            .map(serviceMap::get)
+                                            .filter(Objects::nonNull)
+                                            .filter(ServiceConfigInfo::getIsActive)
+                                            .filter(service -> service.getAuthKey() != null)
+                            );
+                });
     }
 
     private String buildServiceUrl(String baseUrl, ServiceConfigInfo serviceConfig) {
