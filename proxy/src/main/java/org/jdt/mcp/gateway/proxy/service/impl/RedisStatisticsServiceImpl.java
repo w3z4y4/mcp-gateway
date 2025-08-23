@@ -1,13 +1,14 @@
 package org.jdt.mcp.gateway.proxy.service.impl;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.jdt.mcp.gateway.auth.AuthContextHelper;
+import org.jdt.mcp.gateway.core.dto.ServiceStatsData;
 import org.jdt.mcp.gateway.core.entity.ServiceStatisticsEntity;
+import org.jdt.mcp.gateway.mapper.AuthKeyMapper;
 import org.jdt.mcp.gateway.mapper.ServiceStatisticsMapper;
 import org.jdt.mcp.gateway.proxy.config.ProxyConfiguration;
 import org.jdt.mcp.gateway.proxy.service.StatisticsService;
-import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
+import org.jdt.mcp.gateway.service.RedisStatsCacheService;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
@@ -15,33 +16,25 @@ import reactor.core.scheduler.Schedulers;
 
 import java.time.Duration;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.Map;
-
-import static org.jdt.mcp.gateway.core.constant.RedisConstant.*;
 
 @Slf4j
 @Service
 public class RedisStatisticsServiceImpl implements StatisticsService {
 
-    private static final Duration CACHE_EXPIRE = Duration.ofHours(25); // 25小时过期
-
-
     private final ProxyConfiguration proxyConfig;
     private final AuthContextHelper authContextHelper;
-    private final ReactiveStringRedisTemplate redisTemplate;
+    private final RedisStatsCacheService redisStatsService;
     private final ServiceStatisticsMapper statisticsMapper;
-    private final org.jdt.mcp.gateway.mapper.AuthKeyMapper authKeyMapper;
+    private final AuthKeyMapper authKeyMapper;
 
     public RedisStatisticsServiceImpl(ProxyConfiguration proxyConfig,
                                       AuthContextHelper authContextHelper,
-                                      ReactiveStringRedisTemplate redisTemplate,
+                                      RedisStatsCacheService redisStatsService,
                                       ServiceStatisticsMapper statisticsMapper,
-                                      org.jdt.mcp.gateway.mapper.AuthKeyMapper authKeyMapper) {
+                                      AuthKeyMapper authKeyMapper) {
         this.proxyConfig = proxyConfig;
         this.authContextHelper = authContextHelper;
-        this.redisTemplate = redisTemplate;
+        this.redisStatsService = redisStatsService;
         this.statisticsMapper = statisticsMapper;
         this.authKeyMapper = authKeyMapper;
     }
@@ -55,162 +48,108 @@ public class RedisStatisticsServiceImpl implements StatisticsService {
 
         return Mono.fromRunnable(() -> {
             try {
-                // 获取认证信息
-                AuthContextHelper.AuthInfo authInfo = authContextHelper.getAuthInfoFromExchange(exchange);
-                String authKey = authInfo != null ? authInfo.authKey() : null;
-                String userId = "anonymous";
+                // 提取用户信息
+                String userId = extractUserId(exchange);
 
-                // 如果有认证key，从数据库查询用户ID
-                if (authKey != null) {
-                    try {
-                        var authEntity = authKeyMapper.findByKeyHash(authKey);
-                        if (authEntity != null) {
-                            userId = authEntity.getUserId();
-                        }
-                    } catch (Exception e) {
-                        log.warn("Failed to query user info for authKey: {}", authKey, e);
-                    }
-                }
+                // 异步记录统计
+                redisStatsService.recordRequestStats(serviceId, userId, statusCode, responseTime.toMillis())
+                        .doOnSuccess(v -> log.debug("Statistics recorded for service: {}", serviceId))
+                        .doOnError(error -> log.warn("Failed to record statistics for service: {}", serviceId, error))
+                        .subscribe();
 
-                recordRequestAsync(serviceId, userId, statusCode, responseTime.toMillis());
             } catch (Exception e) {
-                log.warn("Failed to record statistics for service: {}", serviceId, e);
+                log.warn("Failed to process statistics recording for service: {}", serviceId, e);
             }
         }).then();
-    }
-
-    /**
-     * 异步记录请求统计
-     */
-    private void recordRequestAsync(String serviceId, String userId, int statusCode, long responseTimeMs) {
-        Mono.fromRunnable(() -> {
-            String today = LocalDate.now().toString();
-            String statsKey = SERVICE_STATS_PREFIX + serviceId + ":" + today;
-            String userSetKey = USER_SET_KEY_PREFIX + serviceId + ":" + today;
-
-            try {
-                // 并行执行多个Redis操作
-                Mono.when(
-                        // 增加总调用数
-                        redisTemplate.opsForHash().increment(statsKey, "total_calls", 1),
-
-                        // 增加成功/失败调用数
-                        redisTemplate.opsForHash().increment(statsKey,
-                                statusCode >= 200 && statusCode < 300 ? "success_calls" : "failed_calls", 1),
-
-                        // 更新响应时间统计
-                        updateResponseTimeStats(statsKey, responseTimeMs),
-
-                        // 记录用户
-                        redisTemplate.opsForSet().add(userSetKey, userId),
-
-                        // 设置过期时间
-                        redisTemplate.expire(statsKey, CACHE_EXPIRE),
-                        redisTemplate.expire(userSetKey, CACHE_EXPIRE)
-                ).subscribe(
-                        result -> log.debug("Statistics recorded for service: {}", serviceId),
-                        error -> log.warn("Failed to record statistics in Redis for service: {}", serviceId, error)
-                );
-
-            } catch (Exception e) {
-                log.warn("Error recording statistics for service: {}", serviceId, e);
-            }
-        }).subscribeOn(Schedulers.boundedElastic()).subscribe();
-    }
-
-    /**
-     * 更新响应时间统计
-     */
-    private Mono<Void> updateResponseTimeStats(String statsKey, long responseTimeMs) {
-        return redisTemplate.opsForHash().get(statsKey, "total_response_time")
-                .cast(String.class)
-                .defaultIfEmpty("0")
-                .zipWith(redisTemplate.opsForHash().get(statsKey, "max_response_time").cast(String.class).defaultIfEmpty("0"))
-                .flatMap(tuple -> {
-                    long currentTotal = Long.parseLong(tuple.getT1());
-                    long currentMax = Long.parseLong(tuple.getT2());
-
-                    Map<String, String> updateMap = new HashMap<>();
-                    updateMap.put("total_response_time", String.valueOf(currentTotal + responseTimeMs));
-
-                    if (responseTimeMs > currentMax) {
-                        updateMap.put("max_response_time", String.valueOf(responseTimeMs));
-                    }
-
-                    return redisTemplate.opsForHash().putAll(statsKey, updateMap);
-                }).then();
     }
 
     @Override
     public Mono<ServiceStats> getServiceStats(String serviceId) {
         // 从数据库获取历史统计数据
         return Mono.fromCallable(() -> {
-            ServiceStatisticsEntity entity = statisticsMapper.findByServiceIdAndDate(serviceId, LocalDate.now());
-            if (entity == null) {
-                return ServiceStats.empty();
-            }
+                    ServiceStatisticsEntity entity = statisticsMapper.findByServiceIdAndDate(serviceId, LocalDate.now());
+                    if (entity == null) {
+                        return ServiceStats.empty();
+                    }
 
-            return new ServiceStats(
-                    entity.getTotalCalls(),
-                    entity.getSuccessCalls(),
-                    entity.getFailedCalls(),
-                    entity.getAvgResponseTimeMs(),
-                    entity.getMaxResponseTimeMs(),
-                    entity.getUniqueUsers(),
-                    entity.getUpdatedAt()
-            );
-        }).subscribeOn(Schedulers.boundedElastic());
+                    return convertToServiceStats(entity);
+                }).subscribeOn(Schedulers.boundedElastic())
+                .doOnError(error -> log.warn("Error getting service stats from database: {}", serviceId, error));
     }
 
     @Override
     public Mono<ServiceStats> getRealtimeServiceStats(String serviceId) {
-        String today = LocalDate.now().toString();
-        String statsKey = SERVICE_STATS_PREFIX + serviceId + ":" + today;
-        String userSetKey = USER_SET_KEY_PREFIX + serviceId + ":" + today;
-
-        return Mono.zip(
-                redisTemplate.opsForHash().entries(statsKey).collectMap(entry -> entry.getKey().toString(), entry -> entry.getValue().toString()),
-                redisTemplate.opsForSet().size(userSetKey)
-        ).map(tuple -> {
-            Map<String, String> stats = tuple.getT1();
-            Long uniqueUsers = tuple.getT2();
-
-            int totalCalls = getIntValue(stats, "total_calls");
-            int successCalls = getIntValue(stats, "success_calls");
-            int failedCalls = getIntValue(stats, "failed_calls");
-            long totalResponseTime = getLongValue(stats, "total_response_time");
-            long maxResponseTime = getLongValue(stats, "max_response_time");
-
-            long avgResponseTime = totalCalls > 0 ? totalResponseTime / totalCalls : 0;
-
-            return new ServiceStats(
-                    totalCalls,
-                    successCalls,
-                    failedCalls,
-                    avgResponseTime,
-                    maxResponseTime,
-                    uniqueUsers.intValue(),
-                    LocalDateTime.now()
-            );
-        }).onErrorReturn(ServiceStats.empty());
+        return redisStatsService.getRealtimeServiceStats(serviceId)
+                .map(this::convertToServiceStats)
+                .onErrorReturn(ServiceStats.empty())
+                .doOnError(error -> log.warn("Error getting realtime service stats: {}", serviceId, error));
     }
 
     @Override
     public Mono<Void> clearStats() {
-        String pattern = SERVICE_STATS_PREFIX + "*";
-        return redisTemplate.keys(pattern)
-                .flatMap(redisTemplate::delete)
-                .then()
-                .doOnSuccess(v -> log.info("Statistics cache cleared"));
+        return redisStatsService.clearStats()
+                .doOnSuccess(v -> log.info("Statistics cache cleared"))
+                .doOnError(error -> log.error("Failed to clear statistics cache", error));
     }
 
     @Override
     public Mono<Void> flushStatisticsToDatabase() {
-        return redisTemplate.keys(SERVICE_STATS_PREFIX + "*")
+        return redisStatsService.getAllStatisticsKeys()
                 .flatMap(this::flushSingleServiceStats)
                 .then()
                 .doOnSuccess(v -> log.info("Statistics flushed to database"))
                 .doOnError(e -> log.error("Failed to flush statistics to database", e));
+    }
+
+    /**
+     * 提取用户ID
+     */
+    private String extractUserId(ServerWebExchange exchange) {
+        try {
+            AuthContextHelper.AuthInfo authInfo = authContextHelper.getAuthInfoFromExchange(exchange);
+            String authKey = authInfo != null ? authInfo.authKey() : null;
+
+            if (authKey != null) {
+                var authEntity = authKeyMapper.findByKeyHash(authKey);
+                if (authEntity != null) {
+                    return authEntity.getUserId();
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to extract user ID from exchange", e);
+        }
+
+        return "anonymous";
+    }
+
+    /**
+     * 转换为ServiceStats对象
+     */
+    private ServiceStats convertToServiceStats(ServiceStatsData data) {
+        return new ServiceStats(
+                data.getTotalCalls(),
+                data.getSuccessCalls(),
+                data.getFailedCalls(),
+                data.getAvgResponseTimeMs(),
+                data.getMaxResponseTimeMs(),
+                data.getUniqueUsers(),
+                data.getLastUpdateTime()
+        );
+    }
+
+    /**
+     * 转换为ServiceStats对象 (从数据库实体)
+     */
+    private ServiceStats convertToServiceStats(ServiceStatisticsEntity entity) {
+        return new ServiceStats(
+                entity.getTotalCalls(),
+                entity.getSuccessCalls(),
+                entity.getFailedCalls(),
+                entity.getAvgResponseTimeMs(),
+                entity.getMaxResponseTimeMs(),
+                entity.getUniqueUsers(),
+                entity.getUpdatedAt()
+        );
     }
 
     /**
@@ -220,62 +159,96 @@ public class RedisStatisticsServiceImpl implements StatisticsService {
         return Mono.fromRunnable(() -> {
             try {
                 // 解析serviceId和date
-                String[] parts = statsKey.replace(SERVICE_STATS_PREFIX, "").split(":");
+                String[] parts = statsKey.replace("stats:service:", "").split(":");
                 if (parts.length < 2) return;
 
                 String serviceId = parts[0];
                 LocalDate dateKey = LocalDate.parse(parts[1]);
-                String userSetKey = USER_SET_KEY_PREFIX + serviceId + ":" + parts[1];
 
-                // 从Redis获取统计数据
-                Mono.zip(
-                        redisTemplate.opsForHash().entries(statsKey).collectMap(entry -> entry.getKey().toString(), entry -> entry.getValue().toString()),
-                        redisTemplate.opsForSet().size(userSetKey)
-                ).subscribe(tuple -> {
-                    Map<String, String> stats = tuple.getT1();
-                    Long uniqueUsers = tuple.getT2();
+                // 从Redis获取统计数据并保存到数据库
+                redisStatsService.getServiceStatsFromCache(serviceId, dateKey)
+                        .zipWith(redisStatsService.getUniqueUsersCount(serviceId, dateKey))
+                        .subscribe(tuple -> {
+                            try {
+                                var stats = tuple.getT1();
+                                Long uniqueUsers = tuple.getT2();
 
-                    int totalCalls = getIntValue(stats, "total_calls");
-                    if (totalCalls == 0) return; // 没有调用数据，跳过
+                                int totalCalls = getIntValue(stats, "total_calls");
+                                if (totalCalls == 0) return; // 没有调用数据，跳过
 
-                    int successCalls = getIntValue(stats, "success_calls");
-                    int failedCalls = getIntValue(stats, "failed_calls");
-                    long totalResponseTime = getLongValue(stats, "total_response_time");
-                    long maxResponseTime = getLongValue(stats, "max_response_time");
+                                ServiceStatisticsEntity entity = buildStatisticsEntity(
+                                        serviceId, dateKey, stats, uniqueUsers);
 
-                    int avgResponseTime = totalCalls > 0 ? (int) (totalResponseTime / totalCalls) : 0;
-
-                    // 创建实体并保存到数据库
-                    ServiceStatisticsEntity entity = new ServiceStatisticsEntity();
-                    entity.setServiceId(serviceId);
-                    entity.setDateKey(dateKey);
-                    entity.setTotalCalls(totalCalls);
-                    entity.setSuccessCalls(successCalls);
-                    entity.setFailedCalls(failedCalls);
-                    entity.setAvgResponseTimeMs(avgResponseTime);
-                    entity.setMaxResponseTimeMs((int) maxResponseTime);
-                    entity.setUniqueUsers(uniqueUsers.intValue());
-
-                    try {
-                        statisticsMapper.insertOrUpdate(entity);
-                        log.debug("Flushed statistics to DB for service: {} on {}", serviceId, dateKey);
-                    } catch (Exception e) {
-                        log.error("Failed to save statistics to database for service: {}", serviceId, e);
-                    }
-                });
+                                statisticsMapper.insertOrUpdate(entity);
+                                log.debug("Flushed statistics to DB for service: {} on {}", serviceId, dateKey);
+                            } catch (Exception e) {
+                                log.error("Failed to save statistics to database for service: {}", serviceId, e);
+                            }
+                        }, error -> log.warn("Error flushing statistics for key: {}", statsKey, error));
 
             } catch (Exception e) {
-                log.warn("Error flushing statistics for key: {}", statsKey, e);
+                log.warn("Error processing statistics key: {}", statsKey, e);
             }
         }).subscribeOn(Schedulers.boundedElastic()).then();
     }
 
-    private int getIntValue(Map<String, String> map, String key) {
+    /**
+     * 构建统计实体
+     */
+    private ServiceStatisticsEntity buildStatisticsEntity(String serviceId, LocalDate dateKey,
+                                                          java.util.Map<String, String> stats, Long uniqueUsers) {
+        int totalCalls = getIntValue(stats, "total_calls");
+        int successCalls = getIntValue(stats, "success_calls");
+        int failedCalls = getIntValue(stats, "failed_calls");
+        long totalResponseTime = getLongValue(stats, "total_response_time");
+        long maxResponseTime = getLongValue(stats, "max_response_time");
+
+        int avgResponseTime = totalCalls > 0 ? (int) (totalResponseTime / totalCalls) : 0;
+
+        ServiceStatisticsEntity entity = new ServiceStatisticsEntity();
+        entity.setServiceId(serviceId);
+        entity.setDateKey(dateKey);
+        entity.setTotalCalls(totalCalls);
+        entity.setSuccessCalls(successCalls);
+        entity.setFailedCalls(failedCalls);
+        entity.setAvgResponseTimeMs(avgResponseTime);
+        entity.setMaxResponseTimeMs((int) maxResponseTime);
+        entity.setUniqueUsers(uniqueUsers.intValue());
+
+        return entity;
+    }
+
+    /**
+     * 获取缓存统计信息 (业务层方法)
+     */
+    public Mono<ServiceStatsData> getCachedServiceStats(String serviceId) {
+        return redisStatsService.getRealtimeServiceStats(serviceId)
+                .doOnNext(stats -> log.debug("Retrieved cached stats for service: {}", serviceId))
+                .doOnError(error -> log.warn("Error getting cached stats for service: {}", serviceId, error));
+    }
+
+    /**
+     * 检查是否有统计缓存
+     */
+    public Mono<Boolean> hasStatsCache(String serviceId) {
+        return redisStatsService.hasStatsCache(serviceId, LocalDate.now());
+    }
+
+    /**
+     * 删除服务统计缓存
+     */
+    public Mono<Void> deleteServiceStatsCache(String serviceId) {
+        return redisStatsService.deleteServiceStats(serviceId, LocalDate.now())
+                .doOnSuccess(v -> log.info("Deleted stats cache for service: {}", serviceId))
+                .doOnError(error -> log.warn("Error deleting stats cache for service: {}", serviceId, error));
+    }
+
+    private int getIntValue(java.util.Map<String, String> map, String key) {
         String value = map.get(key);
         return value != null ? Integer.parseInt(value) : 0;
     }
 
-    private long getLongValue(Map<String, String> map, String key) {
+    private long getLongValue(java.util.Map<String, String> map, String key) {
         String value = map.get(key);
         return value != null ? Long.parseLong(value) : 0L;
     }
