@@ -21,7 +21,7 @@ public class AuthConfiguration {
     /**
      * 白名单路径，这些路径不需要认证
      */
-    private List<String> whitelist = List.of("/health", "/actuator/**");
+    private List<String> whitelist = List.of("/health", "/actuator/** ", "/api/management/**");
 
     /**
      * 认证失败时的响应消息
