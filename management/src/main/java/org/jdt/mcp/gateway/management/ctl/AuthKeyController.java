@@ -4,6 +4,8 @@ import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.jdt.mcp.gateway.core.dto.AuthKeyApplyRequest;
 import org.jdt.mcp.gateway.core.dto.AuthKeyResponse;
+import org.jdt.mcp.gateway.core.dto.BatchAuthKeyApplyRequest;
+import org.jdt.mcp.gateway.core.dto.BatchAuthKeyApplyResponse;
 import org.jdt.mcp.gateway.management.service.AuthKeyManagementService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -31,6 +33,16 @@ public class AuthKeyController {
     public Mono<AuthKeyResponse> applyAuthKey(@Valid @RequestBody AuthKeyApplyRequest request) {
         log.info("User {} applying for auth key for service {}", request.getUserId(), request.getServiceId());
         return authKeyManagementService.applyAuthKey(request);
+    }
+
+    /**
+     * 用户批量申请多个MCP服务访问密钥
+     */
+    @PostMapping("/batch-apply")
+    public Mono<BatchAuthKeyApplyResponse> batchApplyAuthKeys(@Valid @RequestBody BatchAuthKeyApplyRequest request) {
+        log.info("User {} batch applying for auth keys for services: {}",
+                request.getUserId(), request.getServiceIds());
+        return authKeyManagementService.batchApplyAuthKeys(request);
     }
 
     /**
@@ -97,4 +109,5 @@ public class AuthKeyController {
         log.info("Revoking all keys for user {} and service {}", userId, serviceId);
         return authKeyManagementService.revokeUserServiceKeys(userId, serviceId);
     }
+
 }

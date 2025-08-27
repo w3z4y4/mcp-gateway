@@ -127,13 +127,86 @@ true
 curl -X PATCH "http://localhost:9080/api/management/services/hr-service/status?status=MAINTENANCE"
 ```
 
-### 2. 认证密钥管理API
+# 2. 认证密钥管理API
 
-#### 2.1 🚀申请认证密钥
+## 新增功能
+
+### 2.1 🚀批量申请认证密钥
+
+**接口地址**: `POST /api/management/auth-keys/batch-apply`
+
+**功能描述**: 用户一次性为多个服务申请认证密钥，支持跳过已有密钥的服务
+
+**请求示例**:
+
+```bash
+curl -X POST http://localhost:9080/api/management/auth-keys/batch-apply \
+  -H "Content-Type: application/json" \
+  -d '{
+    "userId": "001025821",
+    "serviceIds": ["hr-service", "weather-service"],
+    "expireHours": 720,
+    "remarks": "批量申请测试环境密钥",
+    "skipExisting": true
+  }'
+```
+
+**请求参数说明**:
+
+- `userId`: 用户ID（必填）
+- `serviceIds`: 服务ID列表（必填，不能为空）
+- `expireHours`: 过期小时数，null或0表示永不过期（可选）
+- `remarks`: 申请备注（可选）
+- `skipExisting`: 是否跳过已存在的密钥（可选，默认false）
+
+**响应示例**:
+
+```json
+{
+  "successKeys": [
+    {
+      "id": 1,
+      "keyHash": "jiT4h3gBuT3CJ2Dz75yFkiX_i4ToUpRI7b-tGTZwIsc",
+      "userId": "001025821",
+      "serviceId": "weather-service",
+      "serviceName": "天气查询服务",
+      "expiresAt": "2025-09-21T11:12:50",
+      "isActive": true,
+      "createdAt": "2025-08-22T11:12:50",
+      "lastUsedAt": null,
+      "remarks": null
+    }
+  ],
+  "failedServices": [
+    {
+      "serviceId": "invalid-service",
+      "reason": "Service not found"
+    }
+  ],
+  "skippedServices": ["hr-service"],
+  "totalRequested": 3,
+  "successCount": 1,
+  "failedCount": 1,
+  "skippedCount": 1
+}
+```
+
+**响应字段说明**:
+
+- `successKeys`: 成功申请的密钥列表
+- `failedServices`: 申请失败的服务及原因
+- `skippedServices`: 跳过的服务ID列表（已有有效密钥）
+- `totalRequested`: 总请求数量
+- `successCount`: 成功数量
+- `failedCount`: 失败数量
+- `skippedCount`: 跳过数量
+
+### 2.2 🚀单个申请认证密钥
 
 **接口地址**: `POST /api/management/auth-keys/apply`
 
 **请求示例**:
+
 ```bash
 curl -X POST http://localhost:9080/api/management/auth-keys/apply \
   -H "Content-Type: application/json" \
@@ -145,6 +218,7 @@ curl -X POST http://localhost:9080/api/management/auth-keys/apply \
 ```
 
 **响应示例**:
+
 ```json
 {
   "id": 1,
@@ -160,38 +234,22 @@ curl -X POST http://localhost:9080/api/management/auth-keys/apply \
 }
 ```
 
-#### 2.2 🚀查询用户密钥列表
+### 2.3 🚀查询用户密钥列表
 
 **接口地址**: `GET /api/management/auth-keys/user/{userId}`
 
 **请求示例**:
+
 ```bash
 curl http://localhost:9080/api/management/auth-keys/user/001025821
 ```
 
-**响应示例**:
-```json
-[
-  {
-    "id": 1,
-    "keyHash": "jiT4h3gBuT3CJ2Dz75yFkiX_i4ToUpRI7b-tGTZwIsc",
-    "userId": "001025821",
-    "serviceId": "hr-service",
-    "serviceName": "人力服务",
-    "expiresAt": null,
-    "isActive": true,
-    "createdAt": "2025-08-22T11:12:50",
-    "lastUsedAt": null,
-    "remarks": null
-  }
-]
-```
-
-#### 2.3 分页查询所有密钥（管理员功能）
+### 2.4 分页查询所有密钥（管理员功能）
 
 **接口地址**: `GET /api/management/auth-keys`
 
 **请求示例**:
+
 ```bash
 # 查询特定用户的密钥
 curl "http://localhost:9080/api/management/auth-keys?userId=001025821&page=0&size=10"
@@ -203,20 +261,22 @@ curl "http://localhost:9080/api/management/auth-keys?serviceId=hr-service&page=0
 curl "http://localhost:9080/api/management/auth-keys?isActive=true&page=0&size=10"
 ```
 
-#### 2.4 撤销密钥
+### 2.5 撤销密钥
 
 **接口地址**: `DELETE /api/management/auth-keys/{keyId}`
 
 **请求示例**:
+
 ```bash
 curl -X DELETE http://localhost:9080/api/management/auth-keys/1
 ```
 
-#### 2.5 更新密钥状态
+### 2.6 更新密钥状态
 
 **接口地址**: `PATCH /api/management/auth-keys/{keyId}/status`
 
 **请求示例**:
+
 ```bash
 # 停用密钥
 curl -X PATCH "http://localhost:9080/api/management/auth-keys/1/status?isActive=false"
@@ -225,11 +285,12 @@ curl -X PATCH "http://localhost:9080/api/management/auth-keys/1/status?isActive=
 curl -X PATCH "http://localhost:9080/api/management/auth-keys/1/status?isActive=true"
 ```
 
-#### 2.6 续期密钥
+### 2.7 续期密钥
 
 **接口地址**: `POST /api/management/auth-keys/{keyId}/renew`
 
 **请求示例**:
+
 ```bash
 # 延长720小时（30天）
 curl -X POST "http://localhost:9080/api/management/auth-keys/1/renew?extendHours=720"
@@ -238,18 +299,14 @@ curl -X POST "http://localhost:9080/api/management/auth-keys/1/renew?extendHours
 curl -X POST "http://localhost:9080/api/management/auth-keys/1/renew?extendHours=0"
 ```
 
-#### 2.7 批量撤销用户服务密钥
+### 2.8 批量撤销用户服务密钥
 
 **接口地址**: `DELETE /api/management/auth-keys/user/{userId}/service/{serviceId}`
 
 **请求示例**:
+
 ```bash
 curl -X DELETE http://localhost:9080/api/management/auth-keys/user/001025821/service/hr-service
-```
-
-**响应示例**:
-```json
-2
 ```
 
 ### 3. 配置生成API

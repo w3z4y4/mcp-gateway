@@ -2,6 +2,8 @@ package org.jdt.mcp.gateway.management.service;
 
 import org.jdt.mcp.gateway.core.dto.AuthKeyApplyRequest;
 import org.jdt.mcp.gateway.core.dto.AuthKeyResponse;
+import org.jdt.mcp.gateway.core.dto.BatchAuthKeyApplyRequest;
+import org.jdt.mcp.gateway.core.dto.BatchAuthKeyApplyResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import reactor.core.publisher.Flux;
@@ -9,6 +11,7 @@ import reactor.core.publisher.Mono;
 
 public interface AuthKeyManagementService {
     Mono<AuthKeyResponse> applyAuthKey(AuthKeyApplyRequest request);
+    Mono<BatchAuthKeyApplyResponse> batchApplyAuthKeys(BatchAuthKeyApplyRequest request);
     Flux<AuthKeyResponse> getUserAuthKeys(String userId);
     Mono<Page<AuthKeyResponse>> getAllAuthKeys(String userId, String serviceId, Boolean isActive, Pageable pageable);
     Mono<Void> revokeAuthKey(Long keyId);
