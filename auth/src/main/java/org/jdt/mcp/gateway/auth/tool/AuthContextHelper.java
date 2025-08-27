@@ -35,13 +35,13 @@ public class AuthContextHelper {
         }
     }
 
-        // 认证信息封装类
-        public record AuthInfo(String authKey, String connectionId) {
-            private String maskAuthKey(String authKey) {
-                if (authKey == null || authKey.length() < 4) {
-                    return "***";
-                }
-                return "***" + authKey.substring(authKey.length() - 4);
+    // 认证信息封装类
+    public record AuthInfo(String authKey, String connectionId) {
+        private String maskAuthKey(String authKey) {
+            if (authKey == null || authKey.length() < 4) {
+                return "***";
             }
+            return "***" + authKey.substring(authKey.length() - 4);
         }
+    }
 }

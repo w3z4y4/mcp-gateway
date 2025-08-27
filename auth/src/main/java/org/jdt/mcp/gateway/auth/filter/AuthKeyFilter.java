@@ -32,6 +32,7 @@ public class AuthKeyFilter implements WebFilter {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange,WebFilterChain chain ) {
+        // todo 先判断param中是否有sessionId，如果有sessionId，那么从redis中查找，有对应key则通过校验，没有就返回403
         ServerHttpRequest request = exchange.getRequest();
         String path = request.getPath().value();
 
@@ -39,7 +40,7 @@ public class AuthKeyFilter implements WebFilter {
         String authKey = extractAuthKey(request);
         String ip = getClientIp(request);
         String connectionId = generateConnectionId(request);
-
+        exchange.getAttributes().put("authKey",authKey);
 
         log.debug("Processing request for path: {}, connectionId: {}, key: {}"
                 , path, connectionId, authKey);
@@ -50,6 +51,7 @@ public class AuthKeyFilter implements WebFilter {
                     if (isValid) {
                         log.info("Authentication successful for connectionId: {}", connectionId);
                         // 认证成功，将信息传递到下游
+                        // todo 使用Context传输，而不是attribute传输
                         return chain.filter(exchange);
                     } else {
                         log.warn("Authentication failed for connectionId: {}", connectionId);

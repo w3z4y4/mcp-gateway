@@ -1,6 +1,7 @@
 package org.jdt.mcp.gateway.proxy.handler;
 
 import lombok.extern.slf4j.Slf4j;
+import org.jdt.mcp.gateway.auth.tool.AuthContextHelper;
 import org.jdt.mcp.gateway.core.entity.MCPServiceEntity;
 import org.jdt.mcp.gateway.proxy.service.MCPDiscoveryService;
 import org.jdt.mcp.gateway.proxy.service.StatisticsService;
@@ -30,6 +31,7 @@ public class McpProxyHandler {
     private final WebClient webClient;
     private final MCPDiscoveryService mcpDiscoveryService;
     private final StatisticsService statisticsService;
+    private final AuthContextHelper authContextHelper;
 
 
     // 需要过滤的请求头
@@ -40,10 +42,11 @@ public class McpProxyHandler {
 
     public McpProxyHandler(WebClient webClient
             , MCPDiscoveryService mcpDiscoveryService
-            , StatisticsService statisticsService) {
+            , StatisticsService statisticsService,  AuthContextHelper authContextHelper) {
         this.webClient = webClient;
         this.mcpDiscoveryService = mcpDiscoveryService;
         this.statisticsService = statisticsService;
+        this.authContextHelper = authContextHelper;
     }
 
     /**
@@ -54,7 +57,7 @@ public class McpProxyHandler {
         ServerHttpResponse response = exchange.getResponse();
 
         String path = request.getPath().value();
-        log.debug("Processing proxy request: {}", path);
+        log.warn("Processing proxy request: {}", path);
 
         // 提取服务ID（路径格式：/mcp/{serviceId}/...）
         String serviceId = extractServiceId(path);
@@ -116,8 +119,25 @@ public class McpProxyHandler {
         statisticsService.recordRequest(exchange, serviceId,
                 clientResponse.statusCode().value(), responseTime);
 
-        // 流式复制响应体
+        // 获取响应体 Flux
         Flux<DataBuffer> body = clientResponse.bodyToFlux(DataBuffer.class);
+
+        // 添加日志：使用 doOnNext 在每个 DataBuffer 被处理时打印（非阻塞）
+        body = body.doOnNext(buffer -> {
+                    try {
+                        // todo 解析出sessionId，和authKey存储对应关系到redis
+                        // 将 DataBuffer 转换为字符串（假设 UTF-8 编码；如果不是文本，可跳过或处理为字节）
+                        String chunk = buffer.toString(java.nio.charset.StandardCharsets.UTF_8);
+                        log.info("Response content key {} chunk: {}"
+                                , exchange.getAttributes().get("authKey")
+                                , chunk);
+                    } catch (Exception e) {
+                        log.error("Error logging response chunk: {}", e.getMessage());
+                    }
+                }).doOnComplete(() -> log.info("Response streaming completed"))
+                .doOnError(throwable -> log.error("Error during response streaming: {}", throwable.getMessage()));
+
+        // 流式复制响应体
         return response.writeWith(body);
     }
 
