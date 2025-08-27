@@ -6,6 +6,8 @@ import org.jdt.mcp.gateway.core.entity.MCPServiceEntity;
 import org.jdt.mcp.gateway.core.tool.AuthKeyGenerator;
 import org.jdt.mcp.gateway.core.dto.AuthKeyApplyRequest;
 import org.jdt.mcp.gateway.core.dto.AuthKeyResponse;
+import org.jdt.mcp.gateway.core.dto.BatchAuthKeyApplyRequest;
+import org.jdt.mcp.gateway.core.dto.BatchAuthKeyApplyResponse;
 import org.jdt.mcp.gateway.mapper.AuthKeyMapper;
 import org.jdt.mcp.gateway.mapper.MCPServiceMapper;
 import org.jdt.mcp.gateway.management.service.AuthKeyManagementService;
@@ -19,6 +21,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -56,18 +59,84 @@ public class AuthKeyManagementServiceImpl implements AuthKeyManagementService {
             }
 
             // 生成新的密钥
-            AuthKeyEntity authKey;
-            if (request.getExpireHours() != null && request.getExpireHours() > 0) {
-                authKey = AuthKeyGenerator.buildAuthKeyEntityWithExpiry(
-                        request.getUserId(), request.getServiceId(), request.getExpireHours());
-            } else {
-                authKey = AuthKeyGenerator.buildAuthKeyEntity(request.getUserId(), request.getServiceId());
-            }
-
+            AuthKeyEntity authKey = generateAuthKey(request.getUserId(), request.getServiceId(), request.getExpireHours());
             authKeyMapper.insert(authKey);
             log.info("Generated auth key for user {} and service {}", request.getUserId(), request.getServiceId());
 
             return buildAuthKeyResponse(authKey, service.getName());
+        }).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    @Override
+    public Mono<BatchAuthKeyApplyResponse> batchApplyAuthKeys(BatchAuthKeyApplyRequest request) {
+        return Mono.fromCallable(() -> {
+            List<AuthKeyResponse> successKeys = new ArrayList<>();
+            List<BatchAuthKeyApplyResponse.FailedService> failedServices = new ArrayList<>();
+            List<String> skippedServices = new ArrayList<>();
+
+            for (String serviceId : request.getServiceIds()) {
+                try {
+                    // 验证服务是否存在
+                    MCPServiceEntity service = serviceMapper.findByServiceId(serviceId);
+                    if (service == null) {
+                        failedServices.add(BatchAuthKeyApplyResponse.FailedService.builder()
+                                .serviceId(serviceId)
+                                .reason("Service not found")
+                                .build());
+                        continue;
+                    }
+
+                    // 检查用户是否已有该服务的有效密钥
+                    List<AuthKeyEntity> existingKeys = authKeyMapper.findByUserIdAndServiceId(
+                            request.getUserId(), serviceId);
+                    long activeKeysCount = existingKeys.stream()
+                            .filter(key -> key.getIsActive() &&
+                                    (key.getExpiresAt() == null || key.getExpiresAt().isAfter(LocalDateTime.now())))
+                            .count();
+
+                    if (activeKeysCount > 0) {
+                        if (request.getSkipExisting()) {
+                            skippedServices.add(serviceId);
+                            log.info("Skipped service {} for user {} - already has active key",
+                                    serviceId, request.getUserId());
+                            continue;
+                        } else {
+                            failedServices.add(BatchAuthKeyApplyResponse.FailedService.builder()
+                                    .serviceId(serviceId)
+                                    .reason("User already has active key for this service")
+                                    .build());
+                            continue;
+                        }
+                    }
+
+                    // 生成新的密钥
+                    AuthKeyEntity authKey = generateAuthKey(request.getUserId(), serviceId, request.getExpireHours());
+                    authKeyMapper.insert(authKey);
+
+                    AuthKeyResponse authKeyResponse = buildAuthKeyResponse(authKey, service.getName());
+                    successKeys.add(authKeyResponse);
+
+                    log.info("Generated auth key for user {} and service {}", request.getUserId(), serviceId);
+
+                } catch (Exception e) {
+                    log.error("Failed to generate auth key for user {} and service {}: {}",
+                            request.getUserId(), serviceId, e.getMessage());
+                    failedServices.add(BatchAuthKeyApplyResponse.FailedService.builder()
+                            .serviceId(serviceId)
+                            .reason(e.getMessage())
+                            .build());
+                }
+            }
+
+            return BatchAuthKeyApplyResponse.builder()
+                    .successKeys(successKeys)
+                    .failedServices(failedServices)
+                    .skippedServices(skippedServices)
+                    .totalRequested(request.getServiceIds().size())
+                    .successCount(successKeys.size())
+                    .failedCount(failedServices.size())
+                    .skippedCount(skippedServices.size())
+                    .build();
         }).subscribeOn(Schedulers.boundedElastic());
     }
 
@@ -180,6 +249,17 @@ public class AuthKeyManagementServiceImpl implements AuthKeyManagementService {
         }).subscribeOn(Schedulers.boundedElastic());
     }
 
+    /**
+     * 生成认证密钥实体
+     */
+    private AuthKeyEntity generateAuthKey(String userId, String serviceId, Long expireHours) {
+        if (expireHours != null && expireHours > 0) {
+            return AuthKeyGenerator.buildAuthKeyEntityWithExpiry(userId, serviceId, expireHours);
+        } else {
+            return AuthKeyGenerator.buildAuthKeyEntity(userId, serviceId);
+        }
+    }
+
     private AuthKeyResponse buildAuthKeyResponse(AuthKeyEntity key, String serviceName) {
         return AuthKeyResponse.builder()
                 .id(key.getId())
@@ -193,4 +273,5 @@ public class AuthKeyManagementServiceImpl implements AuthKeyManagementService {
                 .lastUsedAt(key.getLastUsedAt())
                 .build();
     }
+
 }
