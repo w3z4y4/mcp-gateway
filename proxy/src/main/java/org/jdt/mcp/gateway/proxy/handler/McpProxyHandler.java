@@ -1,12 +1,12 @@
 package org.jdt.mcp.gateway.proxy.handler;
 
 import lombok.extern.slf4j.Slf4j;
-import org.jdt.mcp.gateway.auth.service.SessionAuthService;
 import org.jdt.mcp.gateway.auth.tool.AuthContextHelper;
 import org.jdt.mcp.gateway.core.entity.MCPServiceEntity;
 import org.jdt.mcp.gateway.proxy.service.MCPDiscoveryService;
 import org.jdt.mcp.gateway.proxy.service.StatisticsService;
 import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -35,8 +35,6 @@ public class McpProxyHandler {
     private final WebClient webClient;
     private final MCPDiscoveryService mcpDiscoveryService;
     private final StatisticsService statisticsService;
-    private final AuthContextHelper authContextHelper;
-    private final SessionAuthService sessionAuthService;
 
     // 需要过滤的请求头
     private static final List<String> FILTERED_HEADERS = List.of(
@@ -47,19 +45,19 @@ public class McpProxyHandler {
     // 用于匹配响应中sessionId的正则表达式
     private static final Pattern SESSION_ID_PATTERN = Pattern.compile("sessionId=([a-f0-9\\-]{36})");
 
+    // 用于匹配需要重写的URL模式，例如：data:/mcp/message?sessionId=xxx
+    private static final Pattern URL_REWRITE_PATTERN = Pattern.compile("(data:)?/mcp/([^?\\s]+)(\\?[^\\s]*)?(\\s|$|\"|\')");
+
     // SSE响应的默认会话过期时间：2小时
     private static final Duration DEFAULT_SESSION_TTL = Duration.ofHours(2);
 
     public McpProxyHandler(WebClient webClient,
                            MCPDiscoveryService mcpDiscoveryService,
                            StatisticsService statisticsService,
-                           AuthContextHelper authContextHelper,
-                           SessionAuthService sessionAuthService) {
+                           AuthContextHelper authContextHelper) {
         this.webClient = webClient;
         this.mcpDiscoveryService = mcpDiscoveryService;
         this.statisticsService = statisticsService;
-        this.authContextHelper = authContextHelper;
-        this.sessionAuthService = sessionAuthService;
     }
 
     /**
@@ -138,63 +136,78 @@ public class McpProxyHandler {
         // 获取响应体 Flux
         Flux<DataBuffer> body = clientResponse.bodyToFlux(DataBuffer.class);
 
-        // 处理响应内容，提取sessionId并建立关联关系
-        body = processResponseBody(body, authKey, exchange);
+        // 处理响应内容，提取sessionId并重写URL
+        body = processResponseBodyWithUrlRewrite(body, authKey, serviceId, exchange);
 
         // 流式复制响应体
         return response.writeWith(body);
     }
 
     /**
-     * 处理响应体，提取sessionId并建立与authKey的关联关系
+     * 处理响应体，提取sessionId并重写URL路径
      */
-    private Flux<DataBuffer> processResponseBody(Flux<DataBuffer> body, String authKey, ServerWebExchange exchange) {
+    private Flux<DataBuffer> processResponseBodyWithUrlRewrite(Flux<DataBuffer> body, String authKey,
+                                                               String serviceId, ServerWebExchange exchange) {
         if (authKey == null) {
-            log.debug("No authKey found, skipping sessionId extraction");
-            return body;
+            log.debug("No authKey found, skipping sessionId extraction but still rewriting URLs");
         }
 
-        return body.doOnNext(buffer -> {
+        return body.map(buffer -> {
                     try {
                         // 将 DataBuffer 转换为字符串进行处理
-                        String content = buffer.toString(StandardCharsets.UTF_8);
-                        log.debug("Processing response content for authKey {}: {}", maskKey(authKey), content);
+                        String content = DataBufferUtils.retain(buffer).toString(StandardCharsets.UTF_8);
+                        log.debug("Processing response content for service {}: {}", serviceId, content);
 
-                        // 提取sessionId
-                        extractAndStoreSessionId(content, authKey, exchange);
+
+                        // 重写URL路径
+                        String rewrittenContent = rewriteUrlPaths(content, serviceId);
+
+                        if (!content.equals(rewrittenContent)) {
+                            log.debug("URL rewritten from: {} to: {}", content, rewrittenContent);
+
+                            // 释放原buffer并创建新的buffer
+                            DataBufferUtils.release(buffer);
+                            return exchange.getResponse().bufferFactory().wrap(rewrittenContent.getBytes(StandardCharsets.UTF_8));
+                        }
+
+                        return buffer;
 
                     } catch (Exception e) {
-                        log.error("Error processing response content for sessionId extraction: {}", e.getMessage());
+                        log.error("Error processing response content for URL rewrite: {}", e.getMessage());
+                        return buffer;
                     }
                 }).doOnComplete(() -> log.debug("Response streaming completed"))
                 .doOnError(throwable -> log.error("Error during response streaming: {}", throwable.getMessage()));
     }
 
     /**
-     * 从响应内容中提取sessionId并存储关联关系
+     * 重写响应中的URL路径，添加serviceId前缀
      */
-    private void extractAndStoreSessionId(String content, String authKey, ServerWebExchange exchange) {
-        Matcher matcher = SESSION_ID_PATTERN.matcher(content);
-
-        if (matcher.find()) {
-            String sessionId = matcher.group(1);
-            log.info("Extracted sessionId: {} for authKey: {}", sessionId, maskKey(authKey));
-
-            // 异步存储sessionId与authKey的关联关系
-            sessionAuthService.storeSessionAuthKey(sessionId, authKey, DEFAULT_SESSION_TTL)
-                    .doOnSuccess(v -> {
-                        log.info("Successfully stored session mapping: {} -> {}",
-                                sessionId, maskKey(authKey));
-                        // 将sessionId也存储到exchange attributes中，供后续使用
-                        exchange.getAttributes().put("extractedSessionId", sessionId);
-                    })
-                    .doOnError(error -> log.error("Failed to store session mapping for sessionId: {}",
-                            sessionId, error))
-                    .subscribe(); // 异步执行，不阻塞主流程
-        } else {
-            log.debug("No sessionId found in response content for authKey: {}", maskKey(authKey));
+    private String rewriteUrlPaths(String content, String serviceId) {
+        if (content == null || content.trim().isEmpty()) {
+            return content;
         }
+
+        Matcher matcher = URL_REWRITE_PATTERN.matcher(content);
+        StringBuilder sb = new StringBuilder();
+
+        while (matcher.find()) {
+            String prefix = matcher.group(1) != null ? matcher.group(1) : ""; // data: 前缀
+            String pathPart = matcher.group(2); // /mcp/ 后的路径部分
+            String queryPart = matcher.group(3) != null ? matcher.group(3) : ""; // 查询参数
+            String suffix = matcher.group(4); // 结尾符号
+
+            // 重写URL：/mcp/message -> /mcp/{serviceId}/message
+            String rewrittenUrl = prefix + "/mcp/" + serviceId + "/mcp/" + pathPart + queryPart + suffix;
+
+            log.debug("Rewriting URL: {} -> {}", matcher.group(0), rewrittenUrl);
+            matcher.appendReplacement(sb, Matcher.quoteReplacement(rewrittenUrl));
+        }
+        matcher.appendTail(sb);
+
+        return sb.toString();
     }
+
 
     /**
      * 构建目标URL

@@ -3,7 +3,6 @@ package org.jdt.mcp.gateway.auth.filter;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.jdt.mcp.gateway.auth.service.AuthService;
-import org.jdt.mcp.gateway.auth.service.SessionAuthService;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
@@ -28,11 +27,9 @@ import static org.jdt.mcp.gateway.auth.tool.AuthReqTool.*;
 public class AuthKeyFilter implements WebFilter {
 
     private final AuthService authService;
-    private final SessionAuthService sessionAuthService;
 
-    public AuthKeyFilter(AuthService authService, SessionAuthService sessionAuthService) {
+    public AuthKeyFilter(AuthService authService) {
         this.authService = authService;
-        this.sessionAuthService = sessionAuthService;
     }
 
     @Override
@@ -106,20 +103,7 @@ public class AuthKeyFilter implements WebFilter {
                         }
                     });
         }
-
-        // 4. 如果有sessionId，使用session鉴权
-        if (sessionId != null && !sessionId.trim().isEmpty()) {
-            return sessionAuthService.validateSessionId(sessionId)
-                    .map(authKey_from_session -> {
-                        if (authKey_from_session != null) {
-                            return AuthResult.success("SESSION_ID", authKey_from_session, sessionId);
-                        } else {
-                            return AuthResult.failure("SESSION_ID", "会话无效或已过期");
-                        }
-                    });
-        }
-
-        // 5. 既没有key也没有sessionId
+        // 4. 既没有key也没有sessionId
         return Mono.just(AuthResult.failure("NO_AUTH", "缺少认证信息"));
     }
 
