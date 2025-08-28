@@ -1,6 +1,7 @@
 package org.jdt.mcp.gateway.proxy.handler;
 
 import lombok.extern.slf4j.Slf4j;
+import org.jdt.mcp.gateway.auth.service.SessionAuthService;
 import org.jdt.mcp.gateway.auth.tool.AuthContextHelper;
 import org.jdt.mcp.gateway.core.entity.MCPServiceEntity;
 import org.jdt.mcp.gateway.proxy.service.MCPDiscoveryService;
@@ -20,9 +21,12 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Component
@@ -32,7 +36,7 @@ public class McpProxyHandler {
     private final MCPDiscoveryService mcpDiscoveryService;
     private final StatisticsService statisticsService;
     private final AuthContextHelper authContextHelper;
-
+    private final SessionAuthService sessionAuthService;
 
     // 需要过滤的请求头
     private static final List<String> FILTERED_HEADERS = List.of(
@@ -40,13 +44,22 @@ public class McpProxyHandler {
             "proxy-connection", "proxy-authorization", "te", "trailers", "transfer-encoding"
     );
 
-    public McpProxyHandler(WebClient webClient
-            , MCPDiscoveryService mcpDiscoveryService
-            , StatisticsService statisticsService,  AuthContextHelper authContextHelper) {
+    // 用于匹配响应中sessionId的正则表达式
+    private static final Pattern SESSION_ID_PATTERN = Pattern.compile("sessionId=([a-f0-9\\-]{36})");
+
+    // SSE响应的默认会话过期时间：2小时
+    private static final Duration DEFAULT_SESSION_TTL = Duration.ofHours(2);
+
+    public McpProxyHandler(WebClient webClient,
+                           MCPDiscoveryService mcpDiscoveryService,
+                           StatisticsService statisticsService,
+                           AuthContextHelper authContextHelper,
+                           SessionAuthService sessionAuthService) {
         this.webClient = webClient;
         this.mcpDiscoveryService = mcpDiscoveryService;
         this.statisticsService = statisticsService;
         this.authContextHelper = authContextHelper;
+        this.sessionAuthService = sessionAuthService;
     }
 
     /**
@@ -57,7 +70,7 @@ public class McpProxyHandler {
         ServerHttpResponse response = exchange.getResponse();
 
         String path = request.getPath().value();
-        log.warn("Processing proxy request: {}", path);
+        log.debug("Processing proxy request: {}", path);
 
         // 提取服务ID（路径格式：/mcp/{serviceId}/...）
         String serviceId = extractServiceId(path);
@@ -119,26 +132,68 @@ public class McpProxyHandler {
         statisticsService.recordRequest(exchange, serviceId,
                 clientResponse.statusCode().value(), responseTime);
 
+        // 获取认证信息
+        String authKey = (String) exchange.getAttributes().get("authKey");
+
         // 获取响应体 Flux
         Flux<DataBuffer> body = clientResponse.bodyToFlux(DataBuffer.class);
 
-        // 添加日志：使用 doOnNext 在每个 DataBuffer 被处理时打印（非阻塞）
-        body = body.doOnNext(buffer -> {
-                    try {
-                        // todo 解析出sessionId，和authKey存储对应关系到redis
-                        // 将 DataBuffer 转换为字符串（假设 UTF-8 编码；如果不是文本，可跳过或处理为字节）
-                        String chunk = buffer.toString(java.nio.charset.StandardCharsets.UTF_8);
-                        log.info("Response content key {} chunk: {}"
-                                , exchange.getAttributes().get("authKey")
-                                , chunk);
-                    } catch (Exception e) {
-                        log.error("Error logging response chunk: {}", e.getMessage());
-                    }
-                }).doOnComplete(() -> log.info("Response streaming completed"))
-                .doOnError(throwable -> log.error("Error during response streaming: {}", throwable.getMessage()));
+        // 处理响应内容，提取sessionId并建立关联关系
+        body = processResponseBody(body, authKey, exchange);
 
         // 流式复制响应体
         return response.writeWith(body);
+    }
+
+    /**
+     * 处理响应体，提取sessionId并建立与authKey的关联关系
+     */
+    private Flux<DataBuffer> processResponseBody(Flux<DataBuffer> body, String authKey, ServerWebExchange exchange) {
+        if (authKey == null) {
+            log.debug("No authKey found, skipping sessionId extraction");
+            return body;
+        }
+
+        return body.doOnNext(buffer -> {
+                    try {
+                        // 将 DataBuffer 转换为字符串进行处理
+                        String content = buffer.toString(StandardCharsets.UTF_8);
+                        log.debug("Processing response content for authKey {}: {}", maskKey(authKey), content);
+
+                        // 提取sessionId
+                        extractAndStoreSessionId(content, authKey, exchange);
+
+                    } catch (Exception e) {
+                        log.error("Error processing response content for sessionId extraction: {}", e.getMessage());
+                    }
+                }).doOnComplete(() -> log.debug("Response streaming completed"))
+                .doOnError(throwable -> log.error("Error during response streaming: {}", throwable.getMessage()));
+    }
+
+    /**
+     * 从响应内容中提取sessionId并存储关联关系
+     */
+    private void extractAndStoreSessionId(String content, String authKey, ServerWebExchange exchange) {
+        Matcher matcher = SESSION_ID_PATTERN.matcher(content);
+
+        if (matcher.find()) {
+            String sessionId = matcher.group(1);
+            log.info("Extracted sessionId: {} for authKey: {}", sessionId, maskKey(authKey));
+
+            // 异步存储sessionId与authKey的关联关系
+            sessionAuthService.storeSessionAuthKey(sessionId, authKey, DEFAULT_SESSION_TTL)
+                    .doOnSuccess(v -> {
+                        log.info("Successfully stored session mapping: {} -> {}",
+                                sessionId, maskKey(authKey));
+                        // 将sessionId也存储到exchange attributes中，供后续使用
+                        exchange.getAttributes().put("extractedSessionId", sessionId);
+                    })
+                    .doOnError(error -> log.error("Failed to store session mapping for sessionId: {}",
+                            sessionId, error))
+                    .subscribe(); // 异步执行，不阻塞主流程
+        } else {
+            log.debug("No sessionId found in response content for authKey: {}", maskKey(authKey));
+        }
     }
 
     /**
@@ -215,5 +270,15 @@ public class McpProxyHandler {
 
         DataBuffer buffer = response.bufferFactory().wrap(errorJson.getBytes());
         return response.writeWith(Mono.just(buffer));
+    }
+
+    /**
+     * 脱敏显示key
+     */
+    private String maskKey(String authKey) {
+        if (authKey == null || authKey.length() < 4) {
+            return "***";
+        }
+        return "***" + authKey.substring(authKey.length() - 4);
     }
 }

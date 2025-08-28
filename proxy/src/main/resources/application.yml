@@ -37,9 +37,9 @@ mybatis:
 
 # 日志配置
 logging:
-  level:
-    org.jdt.mcp.gateway: DEBUG
-    org.apache.ibatis: DEBUG
+#  level:
+#    org.jdt.mcp.gateway: DEBUG
+#    org.apache.ibatis: DEBUG
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{50} - %msg%n"
   file:

@@ -1,10 +1,15 @@
 package org.jdt.mcp.gateway.service.impl;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.jdt.mcp.gateway.core.constant.RedisConstant;
 import org.jdt.mcp.gateway.service.RedisAuthKeyService;
 import org.jdt.mcp.gateway.core.entity.AuthKeyEntity;
+import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -17,151 +22,241 @@ import static org.jdt.mcp.gateway.core.constant.RedisConstant.AUTH_KEY_STATUS_PR
 @Service
 public class RedisAuthKeyServiceImpl implements RedisAuthKeyService {
 
-    private static final Duration DEFAULT_EXPIRE_DURATION = Duration.ofHours(2);
-    private static final Duration SHORT_EXPIRE_DURATION = Duration.ofMinutes(5);
+    private final ReactiveStringRedisTemplate reactiveRedisTemplate;
+    private final ObjectMapper objectMapper;
 
-    private final RedisTemplate<String, Object> redisTemplate;
+    // 缓存过期时间：30分钟
+    private static final Duration CACHE_TTL = Duration.ofMinutes(30);
+    // 无效key缓存时间：5分钟
+    private static final Duration INVALID_KEY_TTL = Duration.ofMinutes(5);
+    public RedisAuthKeyServiceImpl(ReactiveStringRedisTemplate reactiveRedisTemplate,
+                                   ObjectMapper objectMapper) {
+        this.reactiveRedisTemplate = reactiveRedisTemplate;
+        this.objectMapper = objectMapper;
+    }
+    @Override
+    public Mono<Void> cacheAuthKey(String authKey, AuthKeyEntity entity) {
+        if (authKey == null || entity == null) {
+            return Mono.error(new IllegalArgumentException("AuthKey and entity cannot be null"));
+        }
 
-    public RedisAuthKeyServiceImpl(RedisTemplate<String, Object> redisTemplate) {
-        this.redisTemplate = redisTemplate;
+        String cacheKey = buildCacheKey(authKey);
+
+        return Mono.fromCallable(() -> objectMapper.writeValueAsString(entity))
+                .onErrorMap(JsonProcessingException.class,
+                        e -> new RuntimeException("Failed to serialize AuthKeyEntity", e))
+                .flatMap(jsonStr -> reactiveRedisTemplate.opsForValue().set(cacheKey, jsonStr, CACHE_TTL))
+                .doOnSuccess(success -> {
+                    if (Boolean.TRUE.equals(success)) {
+                        log.debug("Successfully cached auth key: {}", maskKey(authKey));
+                    } else {
+                        log.warn("Failed to cache auth key: {}", maskKey(authKey));
+                    }
+                })
+                .doOnError(error -> log.error("Failed to cache auth key: {}", maskKey(authKey), error))
+                .then();
+    }
+
+    @Override
+    public Mono<AuthKeyEntity> getAuthKeyFromCache(String authKey) {
+        if (authKey == null) {
+            return Mono.empty();
+        }
+
+        String cacheKey = buildCacheKey(authKey);
+
+        return reactiveRedisTemplate.opsForValue().get(cacheKey)
+                .flatMap(jsonStr -> {
+                    try {
+                        AuthKeyEntity entity = objectMapper.readValue(jsonStr, AuthKeyEntity.class);
+                        log.debug("Retrieved auth key from cache: {}", maskKey(authKey));
+                        return Mono.just(entity);
+                    } catch (JsonProcessingException e) {
+                        log.warn("Failed to deserialize cached auth key: {}", maskKey(authKey), e);
+                        // 删除损坏的缓存
+                        return reactiveRedisTemplate.delete(cacheKey).then(Mono.empty());
+                    }
+                })
+                .doOnError(error -> log.error("Error retrieving auth key from cache: {}", maskKey(authKey), error));
+    }
+
+    @Override
+    public Mono<Void> updateLastUsedTime(String authKey) {
+        if (authKey == null) {
+            return Mono.empty();
+        }
+
+        String cacheKey = buildCacheKey(authKey);
+
+        return reactiveRedisTemplate.opsForValue().get(cacheKey)
+                .flatMap(jsonStr -> {
+                    try {
+                        AuthKeyEntity entity = objectMapper.readValue(jsonStr, AuthKeyEntity.class);
+                        entity.setLastUsedAt(LocalDateTime.now());
+
+                        String updatedJsonStr = objectMapper.writeValueAsString(entity);
+                        return reactiveRedisTemplate.opsForValue().set(cacheKey, updatedJsonStr, CACHE_TTL);
+                    } catch (JsonProcessingException e) {
+                        log.warn("Failed to update last used time in cache for key: {}", maskKey(authKey), e);
+                        return Mono.just(false);
+                    }
+                })
+                .doOnNext(success -> {
+                    if (Boolean.TRUE.equals(success)) {
+                        log.debug("Updated last used time in cache for key: {}", maskKey(authKey));
+                    }
+                })
+                .doOnError(error -> log.error("Error updating last used time in cache: {}", maskKey(authKey), error))
+                .then();
+    }
+
+    @Override
+    public Mono<Void> cacheInvalidKey(String authKey) {
+        if (authKey == null) {
+            return Mono.empty();
+        }
+
+        String statusKey = buildInvalidKeyStatusKey(authKey);
+
+        return reactiveRedisTemplate.opsForValue().set(statusKey, "invalid", INVALID_KEY_TTL)
+                .doOnSuccess(success -> {
+                    if (Boolean.TRUE.equals(success)) {
+                        log.debug("Cached invalid key: {}", maskKey(authKey));
+                    }
+                })
+                .doOnError(error -> log.error("Error caching invalid key: {}", maskKey(authKey), error))
+                .then();
+    }
+
+    @Override
+    public Mono<Boolean> isInvalidKeyCached(String authKey) {
+        if (authKey == null) {
+            return Mono.just(false);
+        }
+
+        String statusKey = buildInvalidKeyStatusKey(authKey);
+
+        return reactiveRedisTemplate.hasKey(statusKey)
+                .doOnNext(exists -> {
+                    if (Boolean.TRUE.equals(exists)) {
+                        log.debug("Found cached invalid key: {}", maskKey(authKey));
+                    }
+                })
+                .doOnError(error -> log.error("Error checking invalid key cache: {}", maskKey(authKey), error))
+                .onErrorReturn(false);
+    }
+
+    @Override
+    public Mono<Void> removeFromCache(String authKey) {
+        if (authKey == null) {
+            return Mono.empty();
+        }
+
+        String cacheKey = buildCacheKey(authKey);
+        String statusKey = buildInvalidKeyStatusKey(authKey);
+
+        return reactiveRedisTemplate.delete(cacheKey, statusKey)
+                .doOnNext(deletedCount -> log.debug("Removed {} keys from cache for: {}",
+                        deletedCount, maskKey(authKey)))
+                .doOnError(error -> log.error("Error removing from cache: {}", maskKey(authKey), error))
+                .then();
+    }
+
+    @Override
+    public Mono<Boolean> hasKeyInCache(String authKey) {
+        if (authKey == null) {
+            return Mono.just(false);
+        }
+
+        String cacheKey = buildCacheKey(authKey);
+
+        return reactiveRedisTemplate.hasKey(cacheKey)
+                .doOnError(error -> log.error("Error checking key existence in cache: {}", maskKey(authKey), error))
+                .onErrorReturn(false);
+    }
+
+    @Override
+    public Mono<Long> getCacheKeyTTL(String authKey) {
+        if (authKey == null) {
+            return Mono.just(-2L);
+        }
+
+        String cacheKey = buildCacheKey(authKey);
+
+        return reactiveRedisTemplate.getExpire(cacheKey)
+                .map(Duration::getSeconds)
+                .doOnNext(ttl -> log.debug("Cache TTL for key {}: {} seconds", maskKey(authKey), ttl))
+                .doOnError(error -> log.error("Error getting cache TTL: {}", maskKey(authKey), error))
+                .onErrorReturn(-2L);
+    }
+
+    @Override
+    public Mono<Void> clearAllCache() {
+        String pattern = RedisConstant.AUTH_KEY_PREFIX + "*";
+        String statusPattern = RedisConstant.AUTH_KEY_STATUS_PREFIX + "*";
+
+        return reactiveRedisTemplate.keys(pattern)
+                .concatWith(reactiveRedisTemplate.keys(statusPattern))
+                .collectList()
+                .flatMap(keys -> {
+                    if (keys.isEmpty()) {
+                        log.debug("No auth cache keys to clear");
+                        return Mono.just(0L);
+                    }
+                    String[] keyArray = keys.toArray(new String[0]);
+                    return reactiveRedisTemplate.delete(keyArray);
+                })
+                .doOnNext(deletedCount -> log.info("Cleared {} auth cache keys", deletedCount))
+                .doOnError(error -> log.error("Error clearing auth cache", error))
+                .then();
+    }
+
+    @Override
+    public Mono<Long> getCacheSize() {
+        String pattern = RedisConstant.AUTH_KEY_PREFIX + "*";
+
+        return reactiveRedisTemplate.keys(pattern)
+                .count()
+                .doOnNext(count -> log.debug("Current auth cache size: {}", count))
+                .doOnError(error -> log.error("Error getting cache size", error))
+                .onErrorReturn(0L);
+    }
+
+    @Override
+    public Mono<Boolean> extendCacheTTL(String authKey, Duration ttl) {
+        if (authKey == null || ttl == null) {
+            return Mono.just(false);
+        }
+
+        String cacheKey = buildCacheKey(authKey);
+
+        return reactiveRedisTemplate.expire(cacheKey, ttl)
+                .doOnNext(success -> {
+                    if (Boolean.TRUE.equals(success)) {
+                        log.debug("Extended cache TTL for key {} to {}", maskKey(authKey), ttl);
+                    }
+                })
+                .doOnError(error -> log.error("Error extending cache TTL: {}", maskKey(authKey), error))
+                .onErrorReturn(false);
     }
 
     /**
-     * 缓存认证key信息
+     * 构建缓存key
      */
-    public void cacheAuthKey(String authKey, AuthKeyEntity entity) {
-        try {
-            String key = buildAuthKeyRedisKey(authKey);
-
-            // 计算过期时间
-            Duration expireDuration = calculateExpireDuration(entity);
-
-            redisTemplate.opsForValue().set(key, entity, expireDuration);
-            log.debug("Cached auth key: {} for duration: {}", maskKey(authKey), expireDuration);
-        } catch (Exception e) {
-            log.error("Failed to cache auth key: {}", maskKey(authKey), e);
-        }
+    private String buildCacheKey(String authKey) {
+        return RedisConstant.AUTH_KEY_PREFIX + authKey;
     }
 
     /**
-     * 从缓存获取认证key信息
+     * 构建无效key状态缓存key
      */
-    public AuthKeyEntity getAuthKeyFromCache(String authKey) {
-        try {
-            String key = buildAuthKeyRedisKey(authKey);
-            Object cached = redisTemplate.opsForValue().get(key);
-
-            if (cached instanceof AuthKeyEntity entity) {
-                log.debug("Retrieved auth key from cache: {}", maskKey(authKey));
-                return entity;
-            }
-
-            return null;
-        } catch (Exception e) {
-            log.error("Failed to get auth key from cache: {}", maskKey(authKey), e);
-            return null;
-        }
+    private String buildInvalidKeyStatusKey(String authKey) {
+        return RedisConstant.AUTH_KEY_STATUS_PREFIX + authKey;
     }
 
     /**
-     * 缓存无效key（防止频繁查询数据库）
+     * 脱敏显示key
      */
-    public void cacheInvalidKey(String authKey) {
-        try {
-            String key = buildAuthKeyStatusRedisKey(authKey);
-            redisTemplate.opsForValue().set(key, "INVALID", SHORT_EXPIRE_DURATION);
-            log.debug("Cached invalid auth key: {}", maskKey(authKey));
-        } catch (Exception e) {
-            log.error("Failed to cache invalid auth key: {}", maskKey(authKey), e);
-        }
-    }
-
-    /**
-     * 检查是否为已缓存的无效key
-     */
-    public boolean isInvalidKeyCached(String authKey) {
-        try {
-            String key = buildAuthKeyStatusRedisKey(authKey);
-            return redisTemplate.hasKey(key);
-        } catch (Exception e) {
-            log.error("Failed to check invalid key cache: {}", maskKey(authKey), e);
-            return false;
-        }
-    }
-
-    /**
-     * 删除认证key缓存（密钥被撤销时）
-     */
-    public void evictAuthKey(String authKey) {
-        try {
-            String keyRedisKey = buildAuthKeyRedisKey(authKey);
-            String statusRedisKey = buildAuthKeyStatusRedisKey(authKey);
-
-            redisTemplate.delete(keyRedisKey);
-            redisTemplate.delete(statusRedisKey);
-            log.debug("Evicted auth key from cache: {}", maskKey(authKey));
-        } catch (Exception e) {
-            log.error("Failed to evict auth key from cache: {}", maskKey(authKey), e);
-        }
-    }
-
-    /**
-     * 批量删除用户服务相关的缓存
-     */
-    public void evictUserServiceKeys(String userId, String serviceId) {
-        try {
-            // 这里简化处理，实际可以根据需要实现更精确的批量删除
-            log.info("Evicted cache for user: {} service: {}", userId, serviceId);
-        } catch (Exception e) {
-            log.error("Failed to evict user service keys from cache", e);
-        }
-    }
-
-    /**
-     * 更新key的最后使用时间（异步）
-     */
-    public void updateLastUsedTime(String authKey) {
-        try {
-            String key = buildAuthKeyRedisKey(authKey);
-            AuthKeyEntity entity = getAuthKeyFromCache(authKey);
-            if (entity != null) {
-                entity.setLastUsedAt(LocalDateTime.now());
-                // 重新缓存，保持原有过期时间
-                Long expire = redisTemplate.getExpire(key, TimeUnit.SECONDS);
-                if (expire != null && expire > 0) {
-                    redisTemplate.opsForValue().set(key, entity, Duration.ofSeconds(expire));
-                }
-            }
-        } catch (Exception e) {
-            log.error("Failed to update last used time in cache: {}", maskKey(authKey), e);
-        }
-    }
-
-    private String buildAuthKeyRedisKey(String authKey) {
-        return AUTH_KEY_PREFIX + authKey;
-    }
-
-    private String buildAuthKeyStatusRedisKey(String authKey) {
-        return AUTH_KEY_STATUS_PREFIX + authKey;
-    }
-
-    private Duration calculateExpireDuration(AuthKeyEntity entity) {
-        if (entity.getExpiresAt() == null) {
-            return DEFAULT_EXPIRE_DURATION;
-        }
-
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime expiresAt = entity.getExpiresAt();
-
-        if (expiresAt.isBefore(now)) {
-            return SHORT_EXPIRE_DURATION; // 已过期的key短期缓存
-        }
-
-        Duration remainingTime = Duration.between(now, expiresAt);
-        return remainingTime.compareTo(DEFAULT_EXPIRE_DURATION) < 0 ?
-                remainingTime : DEFAULT_EXPIRE_DURATION;
-    }
-
     private String maskKey(String authKey) {
         if (authKey == null || authKey.length() < 4) {
             return "***";

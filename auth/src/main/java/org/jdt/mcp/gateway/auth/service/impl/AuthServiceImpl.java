@@ -15,8 +15,6 @@ import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
 
-import java.util.concurrent.CompletableFuture;
-
 @Slf4j
 @Service
 public class AuthServiceImpl implements AuthService {
@@ -89,69 +87,91 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public Mono<Boolean> validateWithDatabaseService(String authKey) {
-        return Mono.fromCallable(() -> {
-                    // 1. 优先检查Redis缓存中的无效key
-                    if (redisAuthKeyService.isInvalidKeyCached(authKey)) {
+        return redisAuthKeyService.isInvalidKeyCached(authKey)
+                .flatMap(isInvalid -> {
+                    if (isInvalid) {
                         log.debug("Auth key found in invalid cache: {}", maskKey(authKey));
-                        return false;
+                        return Mono.just(false);
                     }
 
-                    // 2. 从Redis缓存获取认证key信息
-                    AuthKeyEntity cachedEntity = redisAuthKeyService.getAuthKeyFromCache(authKey);
-                    if (cachedEntity != null) {
-                        log.debug("Auth key found in cache: {}", maskKey(authKey));
+                    // 从Redis缓存获取认证key信息
+                    return redisAuthKeyService.getAuthKeyFromCache(authKey)
+                            .flatMap(cachedEntity -> {
+                                log.debug("Auth key found in cache: {}", maskKey(authKey));
+                                boolean isValid = isAuthKeyValid(cachedEntity);
 
-                        boolean isValid = isAuthKeyValid(cachedEntity);
-                        if (isValid) {
-                            // 异步更新最后使用时间（缓存和数据库）
-                            CompletableFuture.runAsync(() -> {
-                                try {
-                                    redisAuthKeyService.updateLastUsedTime(authKey);
-                                    authKeyMapper.updateLastUsedTime(authKey);
-                                } catch (Exception e) {
-                                    log.warn("Failed to update last used time for cached key: {}",
-                                            maskKey(authKey), e);
+                                if (isValid) {
+                                    // 异步更新最后使用时间
+                                    redisAuthKeyService.updateLastUsedTime(authKey)
+                                            .doOnError(error -> log.warn("Failed to update last used time for cached key: {}",
+                                                    maskKey(authKey), error))
+                                            .subscribeOn(Schedulers.boundedElastic())
+                                            .subscribe();
+
+                                    // 异步更新数据库
+                                    Mono.fromRunnable(() -> {
+                                                try {
+                                                    authKeyMapper.updateLastUsedTime(authKey);
+                                                } catch (Exception e) {
+                                                    log.warn("Failed to update last used time in database for key: {}",
+                                                            maskKey(authKey), e);
+                                                }
+                                            }).subscribeOn(Schedulers.boundedElastic())
+                                            .subscribe();
                                 }
-                            }, Schedulers.boundedElastic().createWorker()::schedule);
-                        }
-                        return isValid;
-                    }
 
-                    // 3. 缓存未命中，查询数据库
-                    log.debug("Cache miss, querying database for key: {}", maskKey(authKey));
-                    AuthKeyEntity dbEntity = authKeyMapper.findByKeyHash(authKey);
+                                return Mono.just(isValid);
+                            })
+                            .switchIfEmpty(
+                                    // 缓存未命中，查询数据库
+                                    Mono.fromCallable(() -> {
+                                        log.debug("Cache miss, querying database for key: {}", maskKey(authKey));
+                                        AuthKeyEntity dbEntity = authKeyMapper.findByKeyHash(authKey);
 
-                    if (dbEntity == null) {
-                        log.warn("Auth key not found in database: {}", maskKey(authKey));
-                        // 缓存无效key，防止频繁查询
-                        redisAuthKeyService.cacheInvalidKey(authKey);
-                        return false;
-                    }
+                                        if (dbEntity == null) {
+                                            log.warn("Auth key not found in database: {}", maskKey(authKey));
+                                            // 异步缓存无效key
+                                            redisAuthKeyService.cacheInvalidKey(authKey)
+                                                    .doOnError(error -> log.warn("Failed to cache invalid key", error))
+                                                    .subscribeOn(Schedulers.boundedElastic())
+                                                    .subscribe();
+                                            return false;
+                                        }
 
-                    // 4. 将数据库结果缓存到Redis
-                    redisAuthKeyService.cacheAuthKey(authKey, dbEntity);
+                                        // 异步缓存到Redis
+                                        redisAuthKeyService.cacheAuthKey(authKey, dbEntity)
+                                                .doOnError(error -> log.warn("Failed to cache auth key", error))
+                                                .subscribeOn(Schedulers.boundedElastic())
+                                                .subscribe();
 
-                    boolean isValid = isAuthKeyValid(dbEntity);
-                    if (isValid) {
-                        log.info("Database key validation successful for key: {}", maskKey(authKey));
+                                        boolean isValid = isAuthKeyValid(dbEntity);
+                                        if (isValid) {
+                                            log.info("Database key validation successful for key: {}", maskKey(authKey));
 
-                        // 异步更新最后使用时间
-                        CompletableFuture.runAsync(() -> {
-                            try {
-                                authKeyMapper.updateLastUsedTime(authKey);
-                                redisAuthKeyService.updateLastUsedTime(authKey);
-                            } catch (Exception e) {
-                                log.warn("Failed to update last used time for key: {}",
-                                        maskKey(authKey), e);
-                            }
-                        }, Schedulers.boundedElastic().createWorker()::schedule);
+                                            // 异步更新最后使用时间
+                                            Mono.fromRunnable(() -> {
+                                                        try {
+                                                            authKeyMapper.updateLastUsedTime(authKey);
+                                                        } catch (Exception e) {
+                                                            log.warn("Failed to update last used time for key: {}",
+                                                                    maskKey(authKey), e);
+                                                        }
+                                                    }).subscribeOn(Schedulers.boundedElastic())
+                                                    .subscribe();
 
-                        return true;
-                    } else {
-                        log.warn("Database key validation failed for key: {}", maskKey(authKey));
-                        return false;
-                    }
-                }).subscribeOn(Schedulers.boundedElastic())
+                                            // 异步更新Redis缓存中的时间
+                                            redisAuthKeyService.updateLastUsedTime(authKey)
+                                                    .doOnError(error -> log.warn("Failed to update last used time in cache", error))
+                                                    .subscribeOn(Schedulers.boundedElastic())
+                                                    .subscribe();
+                                        } else {
+                                            log.warn("Database key validation failed for key: {}", maskKey(authKey));
+                                        }
+
+                                        return isValid;
+                                    }).subscribeOn(Schedulers.boundedElastic())
+                            );
+                })
                 .onErrorResume(throwable -> {
                     log.error("Database validation error for key: {}", maskKey(authKey), throwable);
                     return Mono.just(false);
@@ -183,14 +203,15 @@ public class AuthServiceImpl implements AuthService {
                         // 如果发送失败，记录错误但不影响主流程
                         if (emitResult.isFailure()) {
                             log.warn("Failed to emit auth call record: {}, fallback to sync logging", emitResult);
-                            // 降级到同步记录（可选）
-                            CompletableFuture.runAsync(() -> {
-                                try {
-                                    recordAuthCallSync(path, ip, authKey, isValid);
-                                } catch (Exception e) {
-                                    log.error("Fallback sync logging also failed", e);
-                                }
-                            });
+                            // 降级到异步记录
+                            Mono.fromRunnable(() -> {
+                                        try {
+                                            recordAuthCallSync(path, ip, authKey, isValid);
+                                        } catch (Exception e) {
+                                            log.error("Fallback sync logging also failed", e);
+                                        }
+                                    }).subscribeOn(Schedulers.boundedElastic())
+                                    .subscribe();
                         } else {
                             log.debug("Auth call record emitted successfully for key: {}", maskKey(authKey));
                         }
