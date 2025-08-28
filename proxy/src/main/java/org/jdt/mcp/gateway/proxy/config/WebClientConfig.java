@@ -1,5 +1,6 @@
 package org.jdt.mcp.gateway.proxy.config;
 
+import org.jdt.mcp.gateway.core.config.ProxyConfig;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
@@ -10,7 +11,7 @@ import reactor.netty.http.client.HttpClient;
 public class WebClientConfig {
 
     @Bean
-    public WebClient webClient(ProxyConfiguration proxyConfig) {
+    public WebClient webClient(ProxyConfig proxyConfig) {
         HttpClient httpClient = HttpClient.create()
                 .responseTimeout(proxyConfig.getTimeout())
                 .option(io.netty.channel.ChannelOption.CONNECT_TIMEOUT_MILLIS,

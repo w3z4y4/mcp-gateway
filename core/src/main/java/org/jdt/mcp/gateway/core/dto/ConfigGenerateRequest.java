@@ -14,9 +14,6 @@ public class ConfigGenerateRequest {
     @NotEmpty(message = "Service IDs cannot be empty")
     private List<String> serviceIds;
 
-    // mcp-proxy基础URL
-    private String baseUrl = "http://localhost:9080";
-
     private Boolean toolCallbackEnable = true; // 是否启用工具回调
 
     private Integer timeout = 60; // 超时时间（秒）

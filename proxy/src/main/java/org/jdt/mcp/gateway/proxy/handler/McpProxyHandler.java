@@ -62,6 +62,7 @@ public class McpProxyHandler {
 
     /**
      * 处理MCP代理请求
+     * todo 侵入性太强，能否换成根据id自动路由
      */
     public Mono<Void> handleProxy(ServerWebExchange exchange) {
         ServerHttpRequest request = exchange.getRequest();

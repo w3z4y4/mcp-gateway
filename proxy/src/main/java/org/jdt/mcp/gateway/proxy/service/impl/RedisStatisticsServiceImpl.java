@@ -6,7 +6,7 @@ import org.jdt.mcp.gateway.core.dto.ServiceStatsData;
 import org.jdt.mcp.gateway.core.entity.ServiceStatisticsEntity;
 import org.jdt.mcp.gateway.mapper.AuthKeyMapper;
 import org.jdt.mcp.gateway.mapper.ServiceStatisticsMapper;
-import org.jdt.mcp.gateway.proxy.config.ProxyConfiguration;
+import org.jdt.mcp.gateway.core.config.ProxyConfig;
 import org.jdt.mcp.gateway.proxy.service.StatisticsService;
 import org.jdt.mcp.gateway.service.RedisStatsCacheService;
 import org.springframework.stereotype.Service;
@@ -21,13 +21,13 @@ import java.time.LocalDate;
 @Service
 public class RedisStatisticsServiceImpl implements StatisticsService {
 
-    private final ProxyConfiguration proxyConfig;
+    private final ProxyConfig proxyConfig;
     private final AuthContextHelper authContextHelper;
     private final RedisStatsCacheService redisStatsService;
     private final ServiceStatisticsMapper statisticsMapper;
     private final AuthKeyMapper authKeyMapper;
 
-    public RedisStatisticsServiceImpl(ProxyConfiguration proxyConfig,
+    public RedisStatisticsServiceImpl(ProxyConfig proxyConfig,
                                       AuthContextHelper authContextHelper,
                                       RedisStatsCacheService redisStatsService,
                                       ServiceStatisticsMapper statisticsMapper,

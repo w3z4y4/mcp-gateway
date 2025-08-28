@@ -3,6 +3,7 @@ package org.jdt.mcp.gateway.management.service.impl;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.jdt.mcp.gateway.core.config.ProxyConfig;
 import org.jdt.mcp.gateway.core.entity.AuthKeyEntity;
 import org.jdt.mcp.gateway.core.entity.MCPClientConfig;
 import org.jdt.mcp.gateway.core.entity.MCPServiceEntity;
@@ -32,11 +33,15 @@ public class ConfigGeneratorServiceImpl implements ConfigGeneratorService {
     private final AuthKeyMapper authKeyMapper;
     private final ObjectMapper objectMapper;
     private final Yaml yaml;
+    private final ProxyConfig proxyConfig;
 
-    public ConfigGeneratorServiceImpl(MCPServiceMapper serviceMapper, AuthKeyMapper authKeyMapper) {
+    public ConfigGeneratorServiceImpl(MCPServiceMapper serviceMapper
+            , AuthKeyMapper authKeyMapper
+            , ProxyConfig proxyConfig) {
         this.serviceMapper = serviceMapper;
         this.authKeyMapper = authKeyMapper;
         this.objectMapper = new ObjectMapper();
+        this.proxyConfig = proxyConfig;
 
         // 配置YAML输出格式
         DumperOptions options = new DumperOptions();
@@ -62,11 +67,8 @@ public class ConfigGeneratorServiceImpl implements ConfigGeneratorService {
                     Map<String, ServiceConnectionJsonConfig> connections = new HashMap<>();
                     for (ServiceConfigInfo serviceConfig : serviceConfigs) {
                         ServiceConnectionJsonConfig jsonConfig = ServiceConnectionJsonConfig.builder()
-                                .url(buildServiceUrl(request.getBaseUrl(), serviceConfig))
-                                .type("sse")
-                                .timeout(request.getTimeout())
-                                .disabled(false)
-                                .autoApprove(request.getAutoApprove() ? Collections.emptyList() : null)
+                                .url(buildServiceJsonUrl(proxyConfig.getBaseUrl(), serviceConfig))
+                                .headers(buildHeaders(serviceConfig))
                                 .build();
 
                         connections.put(serviceConfig.getServiceId(), jsonConfig);
@@ -176,7 +178,7 @@ public class ConfigGeneratorServiceImpl implements ConfigGeneratorService {
                     for (ServiceConfigInfo serviceConfig : serviceConfigs) {
                         MCPClientConfig.ServiceConnectionConfig connectionConfig =
                                 MCPClientConfig.ServiceConnectionConfig.builder()
-                                        .url(buildServiceUrl(request.getBaseUrl(), serviceConfig))
+                                        .url(buildServiceUrl(proxyConfig.getBaseUrl(), serviceConfig))
                                         .timeout(request.getTimeout())
                                         .disabled(false)
                                         .autoApprove(request.getAutoApprove() ? Collections.emptyList() : null)
@@ -254,6 +256,9 @@ public class ConfigGeneratorServiceImpl implements ConfigGeneratorService {
                 });
     }
 
+    /**
+     * 构建YAML配置中的服务URL（带key参数）
+     */
     private String buildServiceUrl(String baseUrl, ServiceConfigInfo serviceConfig) {
         String url = baseUrl;
         if (!url.endsWith("/")) {
@@ -269,15 +274,35 @@ public class ConfigGeneratorServiceImpl implements ConfigGeneratorService {
     }
 
     /**
-     * JSON格式的服务连接配置（内部类）
+     * 构建JSON配置中的服务URL（不带key参数，使用/sse后缀）
+     */
+    private String buildServiceJsonUrl(String baseUrl, ServiceConfigInfo serviceConfig) {
+        String url = baseUrl;
+        if (!url.endsWith("/")) {
+            url += "/";
+        }
+        url += "mcp/" + serviceConfig.getServiceId() + "/sse";
+        return url;
+    }
+
+    /**
+     * 构建JSON配置中的请求头（包含Authorization）
+     */
+    private Map<String, String> buildHeaders(ServiceConfigInfo serviceConfig) {
+        Map<String, String> headers = new HashMap<>();
+        if (serviceConfig.getAuthKey() != null) {
+            headers.put("Authorization", "Bearer " + serviceConfig.getAuthKey());
+        }
+        return headers;
+    }
+
+    /**
+     * JSON格式的服务连接配置（内部类）- 更新为新格式
      */
     @lombok.Data
     @lombok.Builder
     private static class ServiceConnectionJsonConfig {
         private String url;
-        private String type;
-        private Integer timeout;
-        private Boolean disabled;
-        private List<String> autoApprove;
+        private Map<String, String> headers;
     }
 }

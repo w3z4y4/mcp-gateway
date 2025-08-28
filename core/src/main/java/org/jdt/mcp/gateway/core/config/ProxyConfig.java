@@ -1,4 +1,4 @@
-package org.jdt.mcp.gateway.proxy.config;
+package org.jdt.mcp.gateway.core.config;
 
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -9,7 +9,10 @@ import java.time.Duration;
 @Data
 @Configuration
 @ConfigurationProperties(prefix = "jdt.mcp.proxy")
-public class ProxyConfiguration {
+public class ProxyConfig {
+
+    // mcp-proxy基础URL
+    private String baseUrl = "http://localhost:8080";
 
     /**
      * 代理超时时间
