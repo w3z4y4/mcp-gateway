@@ -5,14 +5,21 @@ import lombok.extern.slf4j.Slf4j;
 import org.jdt.mcp.gateway.auth.service.AuthService;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.core.io.buffer.DataBufferUtils;
+import org.springframework.core.io.buffer.DefaultDataBufferFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpRequest;
+import org.springframework.http.server.reactive.ServerHttpRequestDecorator;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.WebFilter;
 import org.springframework.web.server.WebFilterChain;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+
+import java.nio.charset.StandardCharsets;
 
 import static org.jdt.mcp.gateway.auth.tool.AuthReqTool.*;
 
@@ -39,9 +46,10 @@ public class AuthKeyFilter implements WebFilter {
         String ip = getClientIp(request);
         String connectionId = generateConnectionId(request);
 
-        log.info("####\nProcessing request for path: {}, connectionId: {}", path, connectionId);
-        request.getQueryParams().forEach((key, value) -> log.info("Param: {}, {}", key, value));
-        log.info("####");
+        log.debug("#######\nProcessing request for path: {}, connectionId: {}", path, connectionId);
+        request.getQueryParams().forEach((key, value) -> log.debug("Param: {}, {}", key, value));
+        request.getHeaders().forEach((key, value) -> log.debug("Header: {}, {}", key, value));
+        log.debug("#######");
 
         // 提取认证信息 (key 或 sessionId)
         String authKey = extractAuthKey(request);
@@ -51,22 +59,62 @@ public class AuthKeyFilter implements WebFilter {
                 maskKey(authKey), sessionId);
 
         // 确定使用哪种鉴权方式
-        return determineAuthMethod(exchange, path, ip, authKey, sessionId)
-                .flatMap(authResult -> {
-                    if (authResult.isValid()) {
-                        log.info("Authentication successful for connectionId: {}, method: {}",
-                                connectionId, authResult.getAuthMethod());
+        return DataBufferUtils.join(request.getBody())
+                // 当请求没有body时(例如GET请求)，提供一个空的DataBuffer作为默认值
+                // 这可以确保后续的 .flatMap() 操作一定会被执行
+                .defaultIfEmpty(new DefaultDataBufferFactory().wrap(new byte[0]))
+                .flatMap(dataBuffer -> {
+                    // ************* FIX ENDS HERE *************
+                    // 1. 记录 Body 信息
+                    byte[] bytes = new byte[dataBuffer.readableByteCount()];
+                    dataBuffer.read(bytes);
+                    DataBufferUtils.release(dataBuffer); // 读取后释放资源
+                    String bodyAsString = new String(bytes, StandardCharsets.UTF_8);
 
-                        // 将认证信息传递到下游
-                        exchange.getAttributes().put("authKey", authResult.getAuthKey());
-                        exchange.getAttributes().put("authMethod", authResult.getAuthMethod());
-
-                        return chain.filter(exchange);
+                    log.debug("#######\nProcessing request for path: {}, connectionId: {}", path, connectionId);
+                    request.getQueryParams().forEach((key, value) -> log.info("Param: {}, {}", key, value));
+                    request.getHeaders().forEach((key, value) -> log.info("Header: {}, {}", key, value));
+                    // 打印Body
+                    if (bodyAsString.isEmpty()) {
+                        log.debug("Body: [Empty]");
                     } else {
-                        log.warn("Authentication failed for connectionId: {}, method: {}, reason: {}",
-                                connectionId, authResult.getAuthMethod(), authResult.getFailureReason());
-                        return handleUnauthorized(exchange, authResult.getFailureReason());
+                        log.debug("Body: {}", bodyAsString);
                     }
+                    log.debug("#######");
+
+                    // 2. 重新包装 Request
+                    ServerHttpRequest mutatedRequest = new ServerHttpRequestDecorator(request) {
+                        @Override
+                        public Flux<DataBuffer> getBody() {
+                            if (bytes.length == 0) {
+                                return Flux.empty();
+                            }
+                            return Flux.just(new DefaultDataBufferFactory().wrap(bytes));
+                        }
+                    };
+                    ServerWebExchange mutatedExchange = exchange.mutate().request(mutatedRequest).build();
+
+                    // 3. 执行原有的认证逻辑
+
+                    log.debug("Extracted auth info - key: {}, sessionId: {}",
+                            maskKey(authKey), sessionId);
+
+                    return determineAuthMethod(mutatedExchange, path, ip, authKey, sessionId)
+                            .flatMap(authResult -> {
+                                if (authResult.isValid()) {
+                                    log.info("Authentication successful for connectionId: {}, method: {}",
+                                            connectionId, authResult.getAuthMethod());
+
+                                    mutatedExchange.getAttributes().put("authKey", authResult.getAuthKey());
+                                    mutatedExchange.getAttributes().put("authMethod", authResult.getAuthMethod());
+
+                                    return chain.filter(mutatedExchange);
+                                } else {
+                                    log.warn("Authentication failed for connectionId: {}, method: {}, reason: {}",
+                                            connectionId, authResult.getAuthMethod(), authResult.getFailureReason());
+                                    return handleUnauthorized(mutatedExchange, authResult.getFailureReason());
+                                }
+                            });
                 })
                 .onErrorResume(throwable -> {
                     log.error("Authentication error for connectionId: {}", connectionId, throwable);

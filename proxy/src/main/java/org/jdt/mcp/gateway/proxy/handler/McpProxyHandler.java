@@ -199,7 +199,13 @@ public class McpProxyHandler {
             String suffix = matcher.group(4); // 结尾符号
 
             // 重写URL：/mcp/message -> /mcp/{serviceId}/message
-            String rewrittenUrl = prefix + "/mcp/" + serviceId + "/mcp/" + pathPart + queryPart + suffix;
+            String mcpProxyPath="/mcp/" + serviceId;
+            String rewrittenUrl;
+            if (pathPart.equals(serviceId)){
+                rewrittenUrl=prefix + "/mcp/" + pathPart + queryPart + suffix;
+            }else {
+                rewrittenUrl = prefix + mcpProxyPath + "/mcp/" + pathPart + queryPart + suffix;
+            }
 
             log.debug("Rewriting URL: {} -> {}", matcher.group(0), rewrittenUrl);
             matcher.appendReplacement(sb, Matcher.quoteReplacement(rewrittenUrl));

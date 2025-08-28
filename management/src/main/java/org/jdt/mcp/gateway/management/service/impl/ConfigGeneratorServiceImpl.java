@@ -53,8 +53,7 @@ public class ConfigGeneratorServiceImpl implements ConfigGeneratorService {
 
     @Override
     public Mono<String> generateYamlConfig(ConfigGenerateRequest request) {
-        return buildMCPClientConfig(request)
-                .map(this::convertConfigToMap)
+        return buildYamlMCPClientConfig(request)
                 .map(yaml::dump)
                 .subscribeOn(Schedulers.boundedElastic());
     }
@@ -167,74 +166,65 @@ public class ConfigGeneratorServiceImpl implements ConfigGeneratorService {
     }
 
     /**
-     * 构建MCP客户端配置实体
+     * 构建YAML格式的MCP客户端配置
      */
-    private Mono<MCPClientConfig> buildMCPClientConfig(ConfigGenerateRequest request) {
+    private Mono<Map<String, Object>> buildYamlMCPClientConfig(ConfigGenerateRequest request) {
         return getServiceConfigs(request)
                 .collectList()
                 .map(serviceConfigs -> {
-                    // 构建服务连接配置
-                    Map<String, MCPClientConfig.ServiceConnectionConfig> connections = new HashMap<>();
-                    for (ServiceConfigInfo serviceConfig : serviceConfigs) {
-                        MCPClientConfig.ServiceConnectionConfig connectionConfig =
-                                MCPClientConfig.ServiceConnectionConfig.builder()
-                                        .url(buildServiceUrl(proxyConfig.getBaseUrl(), serviceConfig))
-                                        .timeout(request.getTimeout())
-                                        .disabled(false)
-                                        .autoApprove(request.getAutoApprove() ? Collections.emptyList() : null)
-                                        .build();
+                    Map<String, Object> yamlConfig = new LinkedHashMap<>();
 
-                        connections.put(serviceConfig.getServiceId(), connectionConfig);
+                    // 构建 spring.ai.mcp.client 配置
+                    Map<String, Object> springAiMcpClient = new LinkedHashMap<>();
+
+                    // 构建 sse.connections
+                    Map<String, Object> connections = new LinkedHashMap<>();
+                    for (ServiceConfigInfo serviceConfig : serviceConfigs) {
+                        Map<String, Object> connectionConfig = new LinkedHashMap<>();
+                        connectionConfig.put("url", buildServiceUrl(proxyConfig.getBaseUrl(), serviceConfig));
+                        connectionConfig.put("sse-endpoint", buildServiceSseUrl(proxyConfig.getBaseUrl(), serviceConfig));
+
+                        // 使用 server1, server2... 作为连接名
+                        String connectionKey = "server" + (connections.size() + 1);
+                        connections.put(connectionKey, connectionConfig);
                     }
 
-                    // 构建完整配置树
-                    MCPClientConfig.SSEConfig sseConfig = MCPClientConfig.SSEConfig.builder()
-                            .connections(connections)
-                            .build();
+                    Map<String, Object> sseConfig = new LinkedHashMap<>();
+                    sseConfig.put("connections", connections);
+                    springAiMcpClient.put("sse", sseConfig);
 
-                    MCPClientConfig.ToolCallbackConfig toolCallbackConfig = MCPClientConfig.ToolCallbackConfig.builder()
-                            .enable(request.getToolCallbackEnable())
-                            .build();
+                    // 添加 type
+                    springAiMcpClient.put("type", "async");
 
-                    MCPClientConfig.ClientConfig clientConfig = MCPClientConfig.ClientConfig.builder()
-                            .toolcallback(toolCallbackConfig)
-                            .sse(sseConfig)
-                            .type("async")
-                            .build();
+                    // 添加 toolcallback
+                    Map<String, Object> toolcallback = new LinkedHashMap<>();
+                    toolcallback.put("enabled", request.getToolCallbackEnable() != null ? request.getToolCallbackEnable() : true);
+                    springAiMcpClient.put("toolcallback", toolcallback);
 
-                    MCPClientConfig.MCPConfig mcpConfig = MCPClientConfig.MCPConfig.builder()
-                            .client(clientConfig)
-                            .build();
+                    yamlConfig.put("spring.ai.mcp.client", springAiMcpClient);
 
-                    MCPClientConfig.AIConfig aiConfig = MCPClientConfig.AIConfig.builder()
-                            .mcp(mcpConfig)
-                            .build();
-
-                    MCPClientConfig.SpringConfig springConfig = MCPClientConfig.SpringConfig.builder()
-                            .ai(aiConfig)
-                            .build();
-
-                    return MCPClientConfig.builder()
-                            .spring(springConfig)
-                            .build();
+                    return yamlConfig;
                 });
     }
 
     /**
-     * 将配置实体转换为Map（用于YAML序列化）
+     * 构建服务的SSE端点URL
      */
-    private Map<String, Object> convertConfigToMap(MCPClientConfig config) {
-        try {
-            // 使用ObjectMapper转换为Map
-            String json = objectMapper.writeValueAsString(config);
-            @SuppressWarnings("unchecked")
-            Map<String, Object> map = objectMapper.readValue(json, Map.class);
-            return map;
-        } catch (JsonProcessingException e) {
-            log.error("Error converting config to map", e);
-            throw new RuntimeException("Failed to convert config to map", e);
+    private String buildServiceSseUrl(String baseUrl, ServiceConfigInfo serviceConfig) {
+        String url = baseUrl;
+        if (!url.endsWith("/")) {
+            url += "/";
         }
+        url += "mcp/" + serviceConfig.getServiceId() + "/sse";
+
+        if (serviceConfig.getAuthKey() != null) {
+            url += "?key=" + serviceConfig.getAuthKey();
+        }
+
+        return url;
     }
+
+
 
     private Flux<ServiceConfigInfo> getServiceConfigs(ConfigGenerateRequest request) {
         return validateConfigRequest(request)
@@ -257,14 +247,10 @@ public class ConfigGeneratorServiceImpl implements ConfigGeneratorService {
     }
 
     /**
-     * 构建YAML配置中的服务URL（带key参数）
+     * 构建YAML配置中的服务URL（带key参数，用于url字段）
      */
     private String buildServiceUrl(String baseUrl, ServiceConfigInfo serviceConfig) {
         String url = baseUrl;
-        if (!url.endsWith("/")) {
-            url += "/";
-        }
-        url += "mcp/" + serviceConfig.getServiceId();
 
         if (serviceConfig.getAuthKey() != null) {
             url += "?key=" + serviceConfig.getAuthKey();

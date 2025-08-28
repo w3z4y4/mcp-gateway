@@ -19,7 +19,8 @@ spring.ai.mcp.client:
   sse:
     connections:
       server1:
-        url: http://localhost:8080/mcp/hr-service?key=LqnohMeP64iFszeeNmEaIbqF8RyMFGTyrpJnHKB23Vo
+        url: http://localhost:8080?key=LqnohMeP64iFszeeNmEaIbqF8RyMFGTyrpJnHKB23Vo
+        sse-endpoint: http://localhost:8080/mcp/hr-service/sse?key=LqnohMeP64iFszeeNmEaIbqF8RyMFGTyrpJnHKB23Vo
   type: async
   toolcallback:
     enabled: true
