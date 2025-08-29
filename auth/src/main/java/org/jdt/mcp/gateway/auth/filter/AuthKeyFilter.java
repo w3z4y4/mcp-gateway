@@ -1,6 +1,5 @@
 package org.jdt.mcp.gateway.auth.filter;
 
-import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.jdt.mcp.gateway.auth.service.AuthService;
 import org.springframework.core.Ordered;
@@ -101,18 +100,18 @@ public class AuthKeyFilter implements WebFilter {
 
                     return determineAuthMethod(mutatedExchange, path, ip, authKey, sessionId)
                             .flatMap(authResult -> {
-                                if (authResult.isValid()) {
+                                if (authResult.valid()) {
                                     log.info("Authentication successful for connectionId: {}, method: {}",
-                                            connectionId, authResult.getAuthMethod());
+                                            connectionId, authResult.authMethod());
 
-                                    mutatedExchange.getAttributes().put("authKey", authResult.getAuthKey());
-                                    mutatedExchange.getAttributes().put("authMethod", authResult.getAuthMethod());
+                                    mutatedExchange.getAttributes().put("authKey", authResult.authKey());
+                                    mutatedExchange.getAttributes().put("authMethod", authResult.authMethod());
 
                                     return chain.filter(mutatedExchange);
                                 } else {
                                     log.warn("Authentication failed for connectionId: {}, method: {}, reason: {}",
-                                            connectionId, authResult.getAuthMethod(), authResult.getFailureReason());
-                                    return handleUnauthorized(mutatedExchange, authResult.getFailureReason());
+                                            connectionId, authResult.authMethod(), authResult.failureReason());
+                                    return handleUnauthorized(mutatedExchange, authResult.failureReason());
                                 }
                             });
                 })
@@ -189,32 +188,17 @@ public class AuthKeyFilter implements WebFilter {
     }
 
     /**
-     * 认证结果封装类
-     */
-    @Getter
-    public static class AuthResult {
-        private final boolean valid;
-        private final String authMethod;
-        private final String authKey;
-        private final String sessionId;
-        private final String failureReason;
-
-        private AuthResult(boolean valid, String authMethod, String authKey,
-                           String sessionId, String failureReason) {
-            this.valid = valid;
-            this.authMethod = authMethod;
-            this.authKey = authKey;
-            this.sessionId = sessionId;
-            this.failureReason = failureReason;
-        }
+         * 认证结果封装类
+         */
+        public record AuthResult(boolean valid, String authMethod, String authKey, String sessionId, String failureReason) {
 
         public static AuthResult success(String authMethod, String authKey, String sessionId) {
-            return new AuthResult(true, authMethod, authKey, sessionId, null);
-        }
+                return new AuthResult(true, authMethod, authKey, sessionId, null);
+            }
 
-        public static AuthResult failure(String authMethod, String failureReason) {
-            return new AuthResult(false, authMethod, null, null, failureReason);
-        }
+            public static AuthResult failure(String authMethod, String failureReason) {
+                return new AuthResult(false, authMethod, null, null, failureReason);
+            }
 
-    }
+        }
 }
