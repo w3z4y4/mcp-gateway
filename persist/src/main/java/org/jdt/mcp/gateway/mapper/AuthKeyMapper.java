@@ -20,20 +20,20 @@ public interface AuthKeyMapper {
     /**
      * 逻辑删除 - 软删除
      */
-    @Update("UPDATE auth_keys SET is_deleted = 1, updated_at = NOW() WHERE id = #{id}")
+    @Update("UPDATE auth_keys SET is_deleted = 1 WHERE id = #{id}")
     void deleteById(Long id);
 
     /**
      * 批量逻辑删除
      */
-    @Update("UPDATE auth_keys SET is_deleted = 1, updated_at = NOW() WHERE user_id = #{userId}")
+    @Update("UPDATE auth_keys SET is_deleted = 1 WHERE user_id = #{userId}")
     void deleteByUserId(String userId);
 
     @Update("""
         UPDATE auth_keys 
         SET key_hash = #{keyHash}, user_id = #{userId}, mcp_service_id = #{MCPServiceId},
             expires_at = #{expiresAt}, is_active = #{isActive}, 
-            last_used_at = #{lastUsedAt}, updated_at = NOW()
+            last_used_at = #{lastUsedAt}
         WHERE id = #{id} AND is_deleted = 0
         """)
     void update(AuthKeyEntity authKey);

@@ -241,7 +241,7 @@ curl -X POST http://localhost:9080/api/management/auth-keys/apply \
 **请求示例**:
 
 ```bash
-curl http://localhost:9080/api/management/auth-keys/user/001025821
+curl http://localhost:9080/api/management/auth-keys/user/001025816
 ```
 
 ### 2.4 分页查询所有密钥（管理员功能）
@@ -268,7 +268,7 @@ curl "http://localhost:9080/api/management/auth-keys?isActive=true&page=0&size=1
 **请求示例**:
 
 ```bash
-curl -X DELETE http://localhost:9080/api/management/auth-keys/1
+curl -X DELETE http://localhost:9080/api/management/auth-keys/2
 ```
 
 ### 2.6 更新密钥状态
