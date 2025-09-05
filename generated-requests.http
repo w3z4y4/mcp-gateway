@@ -88,6 +88,16 @@ Content-Type: application/json
 
 {
   "userId": "001025821",
+  "serviceIds": ["hr-service","weather-service"]
+}
+
+
+### 预览配置
+POST http://localhost:9080/api/management/config/json/preview
+Content-Type: application/json
+
+{
+  "userId": "001025821",
   "serviceIds": ["hr-service"]
 }
 

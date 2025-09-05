@@ -184,8 +184,8 @@ public class ConfigGeneratorServiceImpl implements ConfigGeneratorService {
                         connectionConfig.put("url", buildServiceUrl(proxyConfig.getBaseUrl(), serviceConfig));
                         connectionConfig.put("sse-endpoint", buildServiceSseUrl(proxyConfig.getBaseUrl(), serviceConfig));
 
-                        // 使用 server1, server2... 作为连接名
-                        String connectionKey = "server" + (connections.size() + 1);
+                        // 使用 serviceId 作为连接名
+                        String connectionKey = serviceConfig.getServiceId();
                         connections.put(connectionKey, connectionConfig);
                     }
 
