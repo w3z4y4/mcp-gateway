@@ -19,8 +19,11 @@ spring.ai.mcp.client:
   sse:
     connections:
       server1:
-        url: http://localhost:8080?key=jiT4h3gBuT3CJ2Dz75yFkiX_i4ToUpRI7b-tGTZwIsc
-        sse-endpoint: http://localhost:8080/mcp/hr-service/sse?key=jiT4h3gBuT3CJ2Dz75yFkiX_i4ToUpRI7b-tGTZwIsc
+        url: http://localhost:8080?key=PMFphyuMvhqeUsSOOBDY3fYRIBqiagbXOQEqcm5epY8
+        sse-endpoint: http://localhost:8080/mcp/hr-service/sse?key=PMFphyuMvhqeUsSOOBDY3fYRIBqiagbXOQEqcm5epY8
+      server2:
+        url: http://localhost:8080?key=mUgEIVGh9QjngVtr0rO9Ctf07smFkSb-cgR3uIYxOpE
+        sse-endpoint: http://localhost:8080/mcp/weather-service/sse?key=mUgEIVGh9QjngVtr0rO9Ctf07smFkSb-cgR3uIYxOpE
   type: async
   toolcallback:
     enabled: true

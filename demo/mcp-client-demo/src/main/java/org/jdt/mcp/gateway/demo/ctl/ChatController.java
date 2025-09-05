@@ -7,6 +7,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @Slf4j
 @RestController
 @RequestMapping("/mcp")
@@ -25,5 +28,12 @@ public class ChatController {
     @RequestMapping("/hello")
     public String hi(){
         return "hello";
+    }
+
+    @RequestMapping("/chatWithService")
+    public Flux<String> chatWithService(String prompt){
+        List<String> serviceIds=new ArrayList<>();
+        serviceIds.add("hr-service");
+        return chatService.chatWithService(prompt,"001025821",serviceIds);
     }
 }

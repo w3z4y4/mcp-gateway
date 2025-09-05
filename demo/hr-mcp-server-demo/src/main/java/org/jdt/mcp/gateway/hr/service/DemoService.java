@@ -1,4 +1,4 @@
-package org.jdt.mcp.gateway.demo.service;
+package org.jdt.mcp.gateway.hr.service;
 
 
 import entity.Employee;

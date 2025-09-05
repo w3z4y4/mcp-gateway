@@ -20,6 +20,28 @@ Content-Type: application/json
 <> 2025-08-22T002510.409.json
 <> 2025-08-21T102605.200.json
 
+### 批量申请
+POST http://localhost:9080/api/management/auth-keys/batch-apply
+Content-Type: application/json
+
+{
+  "userId": "001025821",
+  "serviceIds": ["hr-service","weather-service"],
+  "skipExisting": false
+}
+
+###
+POST http://localhost:9080/api/management/config/yaml
+Content-Type: application/json
+
+{
+  "userId": "001025821",
+  "serviceIds": ["weather-service"],
+  "toolCallbackEnable": true,
+  "timeout": 60,
+  "autoApprove": true
+}
+
 ###
 POST http://localhost:9080/api/management/config/yaml
 Content-Type: application/json
@@ -27,7 +49,6 @@ Content-Type: application/json
 {
   "userId": "001025821",
   "serviceIds": ["hr-service"],
-  "baseUrl": "http://localhost:9080",
   "toolCallbackEnable": true,
   "timeout": 60,
   "autoApprove": true
@@ -57,9 +78,10 @@ POST http://localhost:9080/api/management/config/yaml/preview
 Content-Type: application/json
 
 {
-  "userId": "001025816",
-  "serviceIds": ["hr-service"]
+  "userId": "001025821",
+  "serviceIds": ["hr-service","weather-service"]
 }
+
 ### 预览配置
 POST http://localhost:9080/api/management/config/json/preview
 Content-Type: application/json
@@ -73,10 +95,36 @@ Content-Type: application/json
 <> 2025-08-22T000533.200.yaml
 <> 2025-08-21T103809.200.yaml
 
-###
-POST http://localhost:9080/api/management/services/hr-service/health-check
+### 创建 hr服务
+POST http://localhost:9080/api/management/services
+Content-Type: application/json
 
-<> 2025-08-21T145214.200.json
+{
+  "serviceId": "hr-service",
+  "name": "hr-service",
+  "description": "hr服务",
+  "endpoint": "http://localhost:9002",
+  "status": "ACTIVE",
+  "maxQps": 10,
+  "healthCheckUrl": "",
+  "documentation": "hr服务"
+}
+
+### 创建 hr服务
+POST http://localhost:9080/api/management/services
+Content-Type: application/json
+
+{
+  "serviceId": "weather-service",
+  "name": "weather-service",
+  "description": "weather服务",
+  "endpoint": "http://localhost:9001",
+  "status": "ACTIVE",
+  "maxQps": 10,
+  "healthCheckUrl": "",
+  "documentation": "weather服务"
+}
+
 
 ###
 POST http://localhost:8080/api/management/config/yaml/preview
